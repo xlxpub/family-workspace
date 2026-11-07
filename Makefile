@@ -3,7 +3,7 @@ GO ?= go
 # 锁定工具链，避免 go 命令自动升级到高于 go.mod 的版本
 export GOTOOLCHAIN := local
 
-.PHONY: help vet test build build-arm64 run image up down logs ps backup clean
+.PHONY: help vet test build build-arm64 run local image up down logs ps backup clean
 
 help: ## 显示可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -20,8 +20,11 @@ build: ## 编译当前平台到 bin/family-server
 build-arm64: ## 交叉编译 ARM64（NAS / 树莓派）
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath -ldflags="-s -w" -o bin/family-server-linux-arm64 .
 
-run: ## 本地直接运行 http://localhost:8080
+run: ## 本地直接运行（需自行 export FW_AUTH_PASSWORD）http://localhost:8080
 	$(GO) run .
+
+local: ## 本机一键启动（macOS / Linux，自动读取 .env，不依赖 Docker）
+	./scripts/start-local.sh
 
 image: ## 构建 Docker 镜像
 	docker compose build
