@@ -1,0 +1,15 @@
+.git
+.gitignore
+.dockerignore
+data/
+backups/
+bin/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+.env
+.env.*
+!.env.example
+*.md
+docs/

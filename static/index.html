@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>家庭工作台 · 交互原型</title>
+<style>
+:root{
+  --bg:#f5f6fa; --panel:#fff; --line:#e8eaf0; --text:#1f2430; --sub:#8a90a0;
+  --brand:#5b7cfa; --brand-soft:#eef2ff; --ok:#10b981; --warn:#f59e0b; --danger:#ef4444;
+  --radius:14px; --shadow:0 1px 2px rgba(20,30,60,.04),0 8px 24px rgba(20,30,60,.05);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+.app{display:flex;min-height:100vh}
+
+/* ---------- 侧栏 ---------- */
+.sidebar{width:236px;flex:0 0 236px;background:var(--panel);border-right:1px solid var(--line);padding:22px 14px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:10px;padding:0 8px 20px;font-size:17px;font-weight:700;letter-spacing:.3px}
+.brand .logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#5b7cfa,#8b6cf7);display:grid;place-items:center;color:#fff;font-size:15px;font-weight:800}
+.brand small{display:block;font-size:11px;color:var(--sub);font-weight:400;letter-spacing:0}
+.slabel{font-size:11px;color:var(--sub);letter-spacing:1px;padding:14px 10px 8px;text-transform:uppercase}
+.member-pick{display:flex;flex-wrap:wrap;gap:6px;padding:0 6px 6px}
+.mchip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:5px 11px;font-size:12px;display:flex;align-items:center;gap:6px;transition:.15s}
+.mchip:hover{border-color:var(--brand)}
+.mchip.on{background:var(--brand-soft);border-color:var(--brand);color:var(--brand);font-weight:600}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 8px}
+nav{display:flex;flex-direction:column;gap:3px;margin-top:6px}
+.nav-item{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;color:#5a6070;border:0;background:transparent;width:100%;text-align:left;transition:.15s}
+.nav-item:hover{background:#f4f6fb;color:var(--text)}
+.nav-item.on{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.nav-item .count{margin-left:auto;font-size:11px;color:var(--sub);background:#f0f2f7;border-radius:10px;padding:1px 7px}
+.nav-item.on .count{background:#dfe6ff;color:var(--brand)}
+.side-foot{margin-top:auto;border-top:1px solid var(--line);padding-top:12px}
+.hint{font-size:11px;color:var(--sub);padding:8px 10px;line-height:1.5}
+
+/* ---------- 主区 ---------- */
+.main{flex:1;min-width:0;padding:26px 32px 60px;max-width:1320px}
+.topbar{display:flex;align-items:flex-end;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+.topbar h1{margin:0;font-size:24px;letter-spacing:.3px}
+.topbar .sub{color:var(--sub);font-size:13px;margin-top:2px}
+.topbar .spacer{flex:1}
+.btn{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 14px;display:inline-flex;align-items:center;gap:7px;transition:.15s;white-space:nowrap}
+.btn:hover{border-color:var(--brand);color:var(--brand)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+.btn.primary:hover{background:#4a68e0;color:#fff}
+.btn.sm{padding:5px 10px;font-size:12px;border-radius:7px}
+.btn.ghost{border:0;background:transparent;color:var(--sub)}
+.btn.ghost:hover{color:var(--danger);background:#fff1f1}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:18px}
+.card h2{margin:0 0 4px;font-size:15px}
+.card .desc{color:var(--sub);font-size:12px;margin:0 0 16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+.stat .n{font-size:30px;font-weight:700;line-height:1.2}
+.stat .t{color:var(--sub);font-size:12px;margin-top:2px}
+.stat .bar{height:4px;border-radius:4px;background:var(--brand);margin-top:12px;width:38px}
+.stat.g .bar{background:var(--ok)} .stat.o .bar{background:var(--warn)}
+
+/* ---------- 列表 ---------- */
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:5px 12px;font-size:12px;color:var(--sub)}
+.chip.on{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+.row{display:flex;align-items:flex-start;gap:12px;padding:12px 4px;border-bottom:1px solid #f1f2f6}
+.row:last-child{border-bottom:0}
+.row .main-c{flex:1;min-width:0}
+.row .ttl{font-weight:600;font-size:14px}
+.row.done .ttl{text-decoration:line-through;color:var(--sub);font-weight:400}
+.row .meta{font-size:12px;color:var(--sub);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tag{font-size:11px;padding:1px 8px;border-radius:6px;background:#f2f4f9;color:#6a7182}
+.tag.p0{background:#fee2e2;color:#dc2626} .tag.p1{background:#ffedd5;color:#d97706}
+.tag.p2{background:#e0e7ff;color:#4f46e5} .tag.p3{background:#f1f5f9;color:#64748b}
+.tag.meal{background:#ecfdf5;color:#059669} .tag.illness{background:#fff7ed;color:#ea580c}
+.tag.visit{background:#eff6ff;color:#2563eb} .tag.soon{background:#fef3c7;color:#b45309}
+.mbadge{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--sub)}
+.cbox{width:17px;height:17px;accent-color:var(--brand);margin-top:3px;flex:0 0 17px}
+.empty{text-align:center;color:var(--sub);padding:34px 0;font-size:13px}
+
+/* ---------- 时间轴 ---------- */
+.tl{position:relative;padding-left:20px}
+.tl:before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--line)}
+.tl-item{position:relative;padding:0 0 18px 12px}
+.tl-item:before{content:"";position:absolute;left:-19px;top:7px;width:10px;height:10px;border-radius:50%;background:var(--brand);border:2px solid #fff;box-shadow:0 0 0 2px var(--brand-soft)}
+.tl-item.k-meal:before{background:var(--ok);box-shadow:0 0 0 2px #dcfce7}
+.tl-item.k-illness:before{background:var(--warn);box-shadow:0 0 0 2px #fef3c7}
+.tl-item.k-visit:before{background:var(--brand);box-shadow:0 0 0 2px var(--brand-soft)}
+.tl-date{font-size:11px;color:var(--sub);letter-spacing:.5px}
+.tl-body{background:#fafbfe;border:1px solid var(--line);border-radius:10px;padding:11px 14px;margin-top:5px}
+.tl-body .ttl{font-weight:600}
+
+/* ---------- 日历 ---------- */
+.cal-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.cal-head strong{font-size:17px;min-width:130px;text-align:center}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+.cal .wd{background:#fafbfe;text-align:center;font-size:11px;color:var(--sub);padding:9px 0;border-bottom:1px solid var(--line)}
+.cal .cell{min-height:92px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px;cursor:pointer;transition:.12s}
+.cal .cell:nth-child(7n){border-right:0}
+.cal .cell:hover{background:#f7f9ff}
+.cal .cell.dim{background:#fcfcfe;color:#c3c7d1}
+.cal .cell.today{background:#f5f7ff}
+.cal .dnum{font-size:12px;font-weight:600;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center}
+.cal .cell.today .dnum span:first-child{background:var(--brand);color:#fff;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px}
+.ev{font-size:10.5px;padding:2px 5px;border-radius:5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px}
+.ev .dot{width:5px;height:5px;flex:0 0 5px}
+.more{font-size:10px;color:var(--sub)}
+
+/* ---------- 模块管理 ---------- */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--sub);font-weight:500;font-size:11px;letter-spacing:.5px;padding:9px 10px;border-bottom:1px solid var(--line)}
+td{padding:11px 10px;border-bottom:1px solid #f1f2f6}
+tr:last-child td{border-bottom:0}
+.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+label.f{display:block;font-size:12px;color:var(--sub)}
+label.f input,label.f select,label.f textarea{width:100%;margin-top:5px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;outline:none}
+label.f input:focus,label.f select:focus,label.f textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+label.f textarea{resize:vertical;min-height:64px}
+.fields{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.fields label{display:flex;align-items:center;gap:5px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 9px;cursor:pointer}
+.fields input{accent-color:var(--brand)}
+.note{background:var(--brand-soft);border:1px solid #dfe6ff;color:#4a5bb5;border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.7;margin-bottom:16px}
+.switch{width:34px;height:19px;border-radius:20px;background:#d7dbe5;position:relative;border:0;transition:.15s}
+.switch:after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:.15s}
+.switch.on{background:var(--brand)} .switch.on:after{left:17px}
+
+/* ---------- 弹窗 ---------- */
+.mask{position:fixed;inset:0;background:rgba(20,26,45,.4);display:grid;place-items:center;z-index:50;padding:20px}
+.mask.hidden{display:none}
+.modal{background:#fff;border-radius:16px;width:min(480px,100%);max-height:88vh;overflow:auto;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal h3{margin:0 0 4px;font-size:17px}
+.modal .desc{color:var(--sub);font-size:12px;margin-bottom:18px}
+.modal .form-grid{gap:12px}
+.modal .foot{display:flex;justify-content:flex-end;gap:9px;margin-top:20px}
+.full{grid-column:1/-1}
+
+/* ---------- 用户与鉴权 ---------- */
+.user-card{display:flex;align-items:center;gap:9px;margin:0 6px 12px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#fafbff}
+.user-card .ava{width:30px;height:30px;border-radius:9px;background:var(--brand);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:700;flex:0 0 30px}
+.user-card .who{flex:1;min-width:0}
+.user-card .who b{display:block;font-size:13px}
+.user-card .who small{display:block;color:var(--sub);font-size:11px}
+.role{font-size:10px;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.role.admin{background:#fee2e2;color:#dc2626}.role.member{background:#e0e7ff;color:#4f46e5}.role.viewer{background:#f1f5f9;color:#64748b}
+.readonly{color:var(--sub);font-size:12px;background:#f4f6fb;border-radius:8px;padding:6px 10px;display:inline-block}
+.login-box{width:min(420px,100%)}
+.login-box .avatars{display:flex;flex-direction:column;gap:8px;margin:14px 0}
+.login-opt{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;transition:.15s}
+.login-opt:hover{border-color:var(--brand);background:var(--brand-soft)}
+.login-opt .ava{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:#fff;font-weight:700;flex:0 0 32px}
+.login-opt .txt{flex:1}.login-opt .txt b{display:block;font-size:13px}.login-opt .txt small{color:var(--sub);font-size:11px}
+
+@media(max-width:900px){
+  .app{flex-direction:column}
+  .sidebar{width:100%;height:auto;position:static;flex:none;padding:14px;border-right:0;border-bottom:1px solid var(--line)}
+  .sidebar .slabel,.side-foot{display:none}
+  nav{flex-direction:row;overflow-x:auto;gap:6px}
+  .nav-item{width:auto;white-space:nowrap;padding:7px 12px}
+  .nav-item .count{display:none}
+  .main{padding:18px 16px 50px}
+  .grid3,.grid2,.form-grid{grid-template-columns:1fr}
+  .cal .cell{min-height:64px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">家</div>
+      <div>家庭工作台<small>Family Workspace</small></div>
+    </div>
+    <div class="user-card" id="userCard"></div>
+    <div class="slabel">家庭成员</div>
+    <div class="member-pick" id="memberPick"></div>
+    <div class="slabel">模块导航（注册表生成）</div>
+    <nav id="nav"></nav>
+    <div class="side-foot">
+      <div class="hint">左侧导航由模块注册表自动生成。到「模块管理」新建一个模块试试，无需改代码即可出现。</div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <div><h1 id="viewTitle">今日概览</h1><div class="sub" id="viewSub"></div></div>
+      <div class="spacer"></div>
+      <button class="btn primary" id="globalAdd" data-act="add">＋ 新增条目</button>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+
+<div class="mask hidden" id="loginMask">
+  <div class="modal login-box">
+    <h3>切换身份</h3>
+    <div class="desc">演示用：选择一个账号进入工作台。真实环境由 Go 后端用 Session Cookie + bcrypt 校验密码，此处仅模拟角色差异与权限边界。</div>
+    <div class="avatars" id="loginOptions"></div>
+    <div class="note" style="margin:0">admin 可管理用户与模块；member 可读写条目；viewer 只读。模块注册表按 <code>required_role</code> 过滤导航，写操作由后端按角色拦截。</div>
+  </div>
+</div>
+
+<div class="mask hidden" id="mask">
+  <div class="modal">
+    <h3 id="modalTitle">新增条目</h3>
+    <div class="desc">字段由目标模块的 schema_json 自动生成，个性字段写入 payload。</div>
+    <form id="itemForm">
+      <div class="form-grid">
+        <label class="f full">写入模块
+          <select id="modalModule" name="module_key"></select>
+        </label>
+        <div id="formFields" class="form-grid full"></div>
+      </div>
+      <div class="foot">
+        <button type="button" class="btn" data-act="closeModal">取消</button>
+        <button type="submit" class="btn primary">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+/* ============ 数据层：对应 modules / members / items 三张表 ============ */
+const KEY = 'family_workspace_v1';
+const ICONS = {
+  home:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/>',
+  calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/>',
+  todo:'<rect x="4" y="4" width="16" height="16" rx="2"/><path d="m8 12 3 3 5-6"/>',
+  health:'<path d="M12 20s-7-4.6-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.4-7 10-7 10Z"/>',
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+  book:'<path d="M4 4h9a3 3 0 0 1 3 3v13a3 3 0 0 0-3-3H4z"/><path d="M20 4h-1a3 3 0 0 0-3 3v13a3 3 0 0 1 3-3h1z"/>',
+  chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>'
+};
+function icon(n,s){s=s||18;return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(ICONS[n]||ICONS.grid)+'</svg>';}
+const VIEW_NAMES = {list:'列表',calendar:'日历',timeline:'时间轴',users:'用户'};
+const FIELD_LIB = [
+  {k:'title',label:'标题',type:'text',core:true},
+  {k:'occur_at',label:'日期',type:'date',core:true},
+  {k:'member_id',label:'归属成员',type:'member',core:true},
+  {k:'note',label:'备注',type:'textarea'},
+  {k:'location',label:'地点',type:'text'},
+  {k:'priority',label:'优先级',type:'select',options:['P0','P1','P2','P3']},
+  {k:'kind',label:'健康类型',type:'select',options:['吃饭','生病','就医']},
+  {k:'detail',label:'详情',type:'text'},
+  {k:'tags',label:'标签',type:'text'},
+  {k:'amount',label:'金额',type:'number'}
+];
+const CORE = ['title','occur_at','member_id'];
+function field(k){return FIELD_LIB.find(f=>f.k===k)||{k:k,label:k,type:'text'};}
+
+function fmt(d){const p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());}
+function shift(n){const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+n);return fmt(d);}
+const TODAY = fmt(new Date());
+function uid(){return 'i'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+function seed(){
+  const mods=[
+    {key:'calendar',name:'日历',icon:'calendar',view:'calendar',builtin:true,enabled:true,desc:'记录家庭重要事情、纪念日与安排',schema:['title','occur_at','member_id','location','note']},
+    {key:'todo',name:'待办',icon:'todo',view:'list',builtin:true,enabled:true,desc:'家务、缴费、采购，可勾选完成',schema:['title','occur_at','member_id','priority','note']},
+    {key:'health',name:'健康',icon:'health',view:'timeline',builtin:true,enabled:true,desc:'吃饭 / 生病 / 哪天要去医院',schema:['title','occur_at','member_id','kind','detail','note']},
+    {key:'users',name:'用户与权限',icon:'settings',view:'users',builtin:true,enabled:true,required_role:'admin',adapter:'users',desc:'账号、角色与登录会话管理（仅管理员可见）',schema:[]}
+  ];
+  const it=(module_key,member_id,title,occur_at,status,payload)=>({id:uid(),module_key:module_key,member_id:member_id,title:title,occur_at:occur_at,end_at:null,status:status||'open',payload:payload||{},created_at:TODAY});
+  return {
+    members:[{id:1,name:'爸爸',color:'#5b7cfa'},{id:2,name:'妈妈',color:'#f59e0b'},{id:3,name:'小宝',color:'#ec4899'},{id:4,name:'外婆',color:'#10b981'}],
+    modules:mods,
+    users:[
+      {id:1,username:'admin',display_name:'管理员',role:'admin',member_id:null,enabled:true,last_login_at:TODAY},
+      {id:2,username:'mama',display_name:'妈妈',role:'member',member_id:2,enabled:true,last_login_at:TODAY},
+      {id:3,username:'guest',display_name:'访客',role:'viewer',member_id:null,enabled:true,last_login_at:null}
+    ],
+    session:1,
+    items:[
+      it('calendar',4,'外婆生日 · 家庭聚餐',shift(0),'open',{location:'外婆家',note:'订蛋糕，18:30 到'}),
+      it('calendar',1,'小宝家长会',shift(1),'open',{location:'学校三楼报告厅'}),
+      it('calendar',null,'季度家庭会议',shift(5),'open',{location:'客厅'}),
+      it('todo',2,'交本月电费',shift(0),'open',{priority:'P0',note:'支付宝生活缴费'}),
+      it('todo',1,'周末采买',shift(1),'open',{priority:'P2'}),
+      it('todo',1,'换净水器滤芯',shift(-3),'open',{priority:'P1',note:'已逾期'}),
+      it('todo',2,'预约空调清洗',shift(4),'open',{priority:'P3'}),
+      it('todo',1,'取快递',shift(-1),'done',{priority:'P3'}),
+      it('health',3,'带小宝去儿童医院复查',shift(0),'open',{kind:'就医',detail:'儿科 · 呼吸科，带上次的化验单',note:'上午 9:00 挂号'}),
+      it('health',3,'小宝疫苗接种（第二针）',shift(3),'open',{kind:'就医',detail:'社区卫生服务中心'}),
+      it('health',4,'外婆血压复诊',shift(6),'open',{kind:'就医',detail:'心内科，空腹'}),
+      it('health',3,'感冒低烧 37.8℃',shift(-2),'open',{kind:'生病',detail:'多喝水，观察体温',note:'已请假'}),
+      it('health',null,'晚饭：清蒸鱼 + 青菜',shift(-1),'done',{kind:'吃饭',detail:'少油少盐（外婆）'}),
+      it('health',null,'早餐：燕麦粥、鸡蛋、牛奶',shift(0),'done',{kind:'吃饭'})
+    ]
+  };
+}
+let DB;
+try{ DB = JSON.parse(localStorage.getItem(KEY)) || seed(); }catch(e){ DB = seed(); }
+if(!DB || !DB.modules){ DB = seed(); }
+// 兼容旧演示数据：补齐 users / session / users 模块，不丢已有条目
+if(!DB.users || !DB.users.length){ DB.users = seed().users; }
+if(!DB.session){ DB.session = DB.users[0].id; }
+if(!DB.modules.some(m=>m.key==='users')){
+  DB.modules.push({key:'users',name:'用户与权限',icon:'settings',view:'users',builtin:true,enabled:true,
+    required_role:'admin',adapter:'users',desc:'账号、角色与登录会话管理（仅管理员可见）',schema:[]});
+}
+function save(){ localStorage.setItem(KEY, JSON.stringify(DB)); }
+
+/* ============ 视图状态 ============ */
+const state = {view:'home', member:'all', calY:new Date().getFullYear(), calM:new Date().getMonth(), kind:'全部', filter:'open'};
+function me(){return DB.users.find(u=>u.id===DB.session)||DB.users[0];}
+const RANK={viewer:1,member:2,admin:3};
+function canSee(role){return RANK[me().role]>=RANK[role||'viewer'];}
+function canWrite(){return canSee('member');}
+function addBtn(key,label){return canWrite()?'<button class="btn primary sm" data-act="add" data-key="'+esc(key)+'">'+label+'</button>':'<span class="readonly">只读账号，无法新增</span>';}
+function memberById(id){return DB.members.find(m=>m.id===Number(id));}
+function modBy(k){return DB.modules.find(m=>m.key===k);}
+function visible(){return DB.items.filter(i=>state.member==='all'||String(i.member_id)===String(state.member)||i.member_id===null);}
+function itemsOf(k){return visible().filter(i=>i.module_key===k);}
+function mBadge(id){const m=memberById(id);if(!m)return '<span class="mbadge">全家</span>';return '<span class="mbadge"><i class="dot" style="background:'+m.color+'"></i>'+esc(m.name)+'</span>';}
+function kindTag(p){const k=p.kind;if(!k)return '';const cls={'吃饭':'meal','生病':'illness','就医':'visit'}[k]||'';return '<span class="tag '+cls+'">'+esc(k)+'</span>';}
+function prioTag(p){if(!p.priority)return '';return '<span class="tag '+p.priority.toLowerCase()+'">'+esc(p.priority)+'</span>';}
+function extras(it){return Object.keys(it.payload||{}).filter(k=>it.payload[k]!==''&&it.payload[k]!=null&&['kind','priority'].indexOf(k)<0).slice(0,2).map(k=>'<span class="tag">'+esc(field(k).label)+'：'+esc(it.payload[k])+'</span>').join('');}
+
+/* ============ 侧栏 ============ */
+function renderSide(){
+  document.getElementById('memberPick').innerHTML =
+    '<button class="mchip '+(state.member==='all'?'on':'')+'" data-act="member" data-id="all">全家</button>'+
+    DB.members.map(m=>'<button class="mchip '+(String(state.member)===String(m.id)?'on':'')+'" data-act="member" data-id="'+m.id+'"><i class="dot" style="background:'+m.color+'"></i>'+esc(m.name)+'</button>').join('');
+  const u=me();
+  document.getElementById('userCard').innerHTML =
+    '<div class="ava">'+esc(u.display_name.slice(0,1))+'</div>'+
+    '<div class="who"><b>'+esc(u.display_name)+'</b><small>'+esc(u.username)+' · <span class="role '+u.role+'">'+u.role+'</span></small></div>'+
+    '<button class="btn ghost sm" data-act="switchUser" title="切换身份">切换</button>';
+  let h='<button class="nav-item '+(state.view==='home'?'on':'')+'" data-act="nav" data-key="home">'+icon('home')+'今日概览</button>';
+  DB.modules.filter(m=>m.enabled&&canSee(m.required_role)).forEach(m=>{
+    h+='<button class="nav-item '+(state.view===m.key?'on':'')+'" data-act="nav" data-key="'+esc(m.key)+'">'+icon(m.icon)+esc(m.name)+'<span class="count">'+itemsOf(m.key).filter(i=>i.status!=='done').length+'</span></button>';
+  });
+  h+='<button class="nav-item '+(state.view==='__modules__'?'on':'')+'" data-act="nav" data-key="__modules__">'+icon('settings')+'模块管理</button>';
+  document.getElementById('nav').innerHTML=h;
+}
+
+/* ============ 首页 ============ */
+function renderHome(){
+  const all=visible();
+  const today=all.filter(i=>i.occur_at===TODAY);
+  const openTodo=all.filter(i=>i.module_key==='todo'&&i.status!=='done');
+  const visits=all.filter(i=>i.module_key==='health'&&i.payload.kind==='就医'&&i.occur_at>TODAY&&i.occur_at<=shift(7));
+  const soon=all.filter(i=>i.occur_at>TODAY&&i.occur_at<=shift(7)).sort((a,b)=>a.occur_at.localeCompare(b.occur_at));
+  let h='<div class="grid3" style="margin-bottom:18px">'+
+    stat(today.length,'今天的事 · 全部模块','')+
+    stat(openTodo.length,'未完成待办','o')+
+    stat(visits.length,'未来 7 天就医安排','g')+'</div><div class="grid2">';
+
+  h+='<div class="card"><h2>今日时间轴</h2><p class="desc">一次查询跨模块聚合，不是三个页面拼起来</p>';
+  h+= today.length? '<div class="tl">'+today.sort((a,b)=>(a.occur_at||'').localeCompare(b.occur_at||'')).map(i=>tlItem(i)).join('')+'</div>' : '<div class="empty">今天暂无记录</div>';
+  h+='</div>';
+
+  h+='<div class="card"><h2>未来 7 天提醒</h2><p class="desc">含就医、日历、待办截止</p>';
+  h+= soon.length? soon.slice(0,7).map(i=>'<div class="row"><div class="main-c"><div class="ttl">'+esc(i.title)+'</div><div class="meta"><span class="tag soon">'+esc(i.occur_at)+'</span>'+mBadge(i.member_id)+kindTag(i.payload)+'<span class="tag">'+esc((modBy(i.module_key)||{}).name||'')+'</span></div></div></div>').join('') : '<div class="empty">近期没有安排</div>';
+  h+='</div></div>';
+
+  h+='<div class="card"><h2>待办速览</h2><p class="desc">按优先级与日期排序，可直接勾选完成</p>';
+  const t=openTodo.sort((a,b)=>(a.occur_at||'').localeCompare(b.occur_at||''));
+  h+= t.length? t.slice(0,6).map(i=>rowHtml(i)).join('') : '<div class="empty">全部完成，很棒</div>';
+  h+='</div>';
+  return h;
+}
+function stat(n,t,cls){return '<div class="stat '+cls+'"><div class="n">'+n+'</div><div class="t">'+t+'</div><div class="bar"></div></div>';}
+function tlItem(i){
+  const k={'吃饭':'k-meal','生病':'k-illness','就医':'k-visit'}[i.payload.kind]||'';
+  return '<div class="tl-item '+k+'"><div class="tl-date">'+esc(i.occur_at||'未设日期')+' · '+esc((modBy(i.module_key)||{}).name||'')+'</div>'+
+    '<div class="tl-body"><div class="ttl">'+esc(i.title)+'</div><div class="meta" style="font-size:12px;color:var(--sub);display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'+mBadge(i.member_id)+kindTag(i.payload)+prioTag(i.payload)+extras(i)+'</div></div></div>';
+}
+function rowHtml(i){
+  const ro=canWrite()?'':' disabled';
+  return '<div class="row '+(i.status==='done'?'done':'')+'">'+
+    '<input class="cbox" type="checkbox" data-act="toggle" data-id="'+i.id+'" '+(i.status==='done'?'checked':'')+ro+'>'+
+    '<div class="main-c"><div class="ttl">'+esc(i.title)+'</div><div class="meta"><span class="tag">'+esc(i.occur_at||'未设日期')+'</span>'+mBadge(i.member_id)+kindTag(i.payload)+prioTag(i.payload)+extras(i)+'<span class="tag">'+esc((modBy(i.module_key)||{}).name||'')+'</span></div></div>'+
+    '<button class="btn ghost sm" data-act="del" data-id="'+i.id+'" title="删除"'+ro+'>删除</button></div>';
+}
+
+/* ============ 列表视图 ============ */
+function renderList(mod){
+  let list=itemsOf(mod.key);
+  if(state.filter==='open') list=list.filter(i=>i.status!=='done');
+  if(state.filter==='done') list=list.filter(i=>i.status==='done');
+  list.sort((a,b)=>(a.occur_at||'9999').localeCompare(b.occur_at||'9999'));
+  let h='<div class="card"><h2>'+esc(mod.name)+'</h2><p class="desc">'+esc(mod.desc||'视图类型：'+(VIEW_NAMES[mod.view]||mod.view))+' · 字段 '+mod.schema.length+' 个（由 schema_json 驱动）</p>'+
+   '<div class="toolbar"><div class="chips">'+
+   [['open','未完成'],['all','全部'],['done','已完成']].map(x=>'<button class="chip '+(state.filter===x[0]?'on':'')+'" data-act="filter" data-v="'+x[0]+'">'+x[1]+'</button>').join('')+
+   '</div><div style="flex:1"></div>'+addBtn(mod.key,'＋ 新增')+'</div>';
+  h+= list.length? list.map(i=>rowHtml(i)).join('') : '<div class="empty">暂无条目，点右上角新增</div>';
+  return h+'</div>';
+}
+
+/* ============ 时间轴视图（健康） ============ */
+function renderTimeline(mod){
+  let list=itemsOf(mod.key);
+  const kinds=mod.schema.indexOf('kind')>=0?['全部','吃饭','生病','就医']:[];
+  if(kinds.length&&state.kind!=='全部') list=list.filter(i=>i.payload.kind===state.kind);
+  list.sort((a,b)=>(b.occur_at||'').localeCompare(a.occur_at||''));
+  const visits=itemsOf(mod.key).filter(i=>i.payload.kind==='就医'&&i.occur_at>=TODAY&&i.status!=='done').sort((a,b)=>a.occur_at.localeCompare(b.occur_at));
+  let h='';
+  if(visits.length){
+    h+='<div class="note"><strong>哪天要去医院：</strong>'+visits.map(i=>esc(i.occur_at)+' '+esc(i.title)+(memberById(i.member_id)?'（'+esc(memberById(i.member_id).name)+'）':'')).join('　/　')+'<br>这些是健康模块里 <code>kind=就医</code> 的条目，同一行数据也会自动出现在日历与首页提醒。</div>';
+  }
+  h+='<div class="card"><h2>'+esc(mod.name)+' · 时间轴</h2><p class="desc">按成员与类型筛选，按日期倒序</p>';
+  if(kinds.length) h+='<div class="toolbar"><div class="chips">'+kinds.map(k=>'<button class="chip '+(state.kind===k?'on':'')+'" data-act="kind" data-v="'+k+'">'+k+'</button>').join('')+'</div><div style="flex:1"></div>'+addBtn(mod.key,'＋ 新增记录')+'</div>';
+  h+= list.length? '<div class="tl">'+list.map(i=>tlItem(i)).join('')+'</div>' : '<div class="empty">暂无记录</div>';
+  return h+'</div>';
+}
+
+/* ============ 日历视图 ============ */
+function renderCalendar(mod){
+  const y=state.calY,m=state.calM;
+  const first=new Date(y,m,1), lead=(first.getDay()+6)%7, start=new Date(y,m,1-lead);
+  const byDate={}; itemsOf(mod.key).forEach(i=>{ if(i.occur_at){ (byDate[i.occur_at]=byDate[i.occur_at]||[]).push(i); } });
+  let h='<div class="card"><div class="cal-head"><button class="btn sm" data-act="prevMonth">← 上月</button><strong>'+y+' 年 '+(m+1)+' 月</strong><button class="btn sm" data-act="nextMonth">下月 →</button><button class="btn sm" data-act="today" style="margin-left:8px">回到本月</button><div style="flex:1"></div>'+addBtn(mod.key,'＋ 新建事件')+'</div><div class="cal">';
+  ['一','二','三','四','五','六','日'].forEach(w=>h+='<div class="wd">周'+w+'</div>');
+  for(let n=0;n<42;n++){
+    const d=new Date(start); d.setDate(start.getDate()+n);
+    const ds=fmt(d), dim=d.getMonth()!==m, evs=byDate[ds]||[];
+    h+='<div class="cell '+(dim?'dim ':'')+(ds===TODAY?'today':'')+'" data-act="addOn" data-date="'+ds+'" data-key="'+esc(mod.key)+'"><div class="dnum"><span>'+d.getDate()+'</span></div>';
+    evs.slice(0,3).forEach(i=>{const mm=memberById(i.member_id);h+='<div class="ev" style="background:'+(mm?mm.color+'18':'#eef2ff')+'"><i class="dot" style="background:'+(mm?mm.color:'#5b7cfa')+'"></i>'+esc(i.title)+'</div>';});
+    if(evs.length>3) h+='<div class="more">+'+(evs.length-3)+' 条</div>';
+    h+='</div>';
+  }
+  return h+'</div><p class="desc" style="margin:12px 0 0">点任意日期格可直接新增；成员按颜色区分。真实实现中，待办截止日与「就医日」会作为同源条目叠加显示在此。</p></div>';
+}
+
+/* ============ 模块管理（扩展能力演示） ============ */
+function renderModules(){
+  const isAdmin=me().role==='admin';
+  let h='<div class="note">扩展机制演示：新建一个模块只需向 <code>modules</code> 表插入一条记录（含 <code>view_type</code> / <code>schema_json</code> / <code>required_role</code>）。保存后左侧导航自动生成入口；<code>adapter=users</code> 的模块走独立表，不落 items —— <strong>零改表、零改聚合逻辑、零改前端代码</strong>。</div>';
+  h+='<div class="card"><h2>已注册模块</h2><p class="desc">modules 表 · 导航按当前角色的 required_role 过滤</p><table><thead><tr><th>模块</th><th>key</th><th>view_type</th><th>可见角色</th><th>存储</th><th>字段数</th><th>启用</th></tr></thead><tbody>';
+  DB.modules.forEach(m=>{
+    h+='<tr><td><span style="display:inline-flex;align-items:center;gap:8px;color:var(--brand)">'+icon(m.icon)+'<b>'+esc(m.name)+'</b></span>'+(m.builtin?' <span class="tag">内置</span>':' <span class="tag" style="background:#ecfdf5;color:#059669">自定义</span>')+'</td><td><code>'+esc(m.key)+'</code></td><td>'+esc(VIEW_NAMES[m.view]||m.view)+'</td><td><span class="role '+(m.required_role||'viewer')+'">'+esc(m.required_role||'viewer')+'</span></td><td><span class="tag">'+esc(m.adapter||'generic')+'</span></td><td>'+m.schema.length+'</td><td><button class="switch '+(m.enabled?'on':'')+'" data-act="enable" data-key="'+esc(m.key)+'"'+(isAdmin?'':' disabled')+'></button></td></tr>';
+  });
+  h+='</tbody></table></div>';
+
+  h+='<div class="card"><h2>新建模块</h2><p class="desc">不需要写代码：填名称、选视图、勾字段，保存即生效'+(isAdmin?'':'（需要 admin 角色）')+'</p>';
+  if(!isAdmin){
+    return h+'<div class="note" style="background:#fff7ed;border-color:#fed7aa;color:#9a3412">当前身份为 <b>'+esc(me().role)+'</b>，创建 / 启停模块需要 admin 角色。</div></div>';
+  }
+  h+='<form id="moduleForm"><div class="form-grid">'+
+    '<label class="f">模块名称<input name="name" required placeholder="例如：家庭账本"></label>'+
+    '<label class="f">图标<select name="icon"><option value="grid">网格</option><option value="book">书本</option><option value="chart">图表</option><option value="calendar">日历</option><option value="health">爱心</option></select></label>'+
+    '<label class="f">视图类型 view_type<select name="view"><option value="list">列表 list</option><option value="timeline">时间轴 timeline</option><option value="calendar">日历 calendar</option></select></label>'+
+    '<label class="f">可见角色 required_role<select name="required_role"><option value="viewer">viewer 所有人</option><option value="member">member 及以上</option><option value="admin">admin 仅管理员</option></select></label>'+
+    '<label class="f">说明<input name="desc" placeholder="一句话描述用途"></label>'+
+    '</div><div style="margin-top:14px"><label class="f">选择字段（标题 / 日期 / 归属成员为固定通用列，其余写入 payload）</label><div class="fields">'+
+    FIELD_LIB.filter(f=>!f.core).map(f=>'<label><input type="checkbox" name="fields" value="'+f.k+'">'+f.label+'</label>').join('')+
+    '</div></div><div style="margin-top:18px;display:flex;gap:9px"><button type="submit" class="btn primary">创建模块</button><button type="button" class="btn ghost" data-act="reset">重置演示数据</button></div></form></div>';
+  return h;
+}
+
+/* ============ 用户与权限模块（adapter=users，独立存储） ============ */
+function renderUsers(mod){
+  const u=me(), isAdmin=u.role==='admin';
+  let h='<div class="note">这个模块是注册表中的普通模块（<code>view_type=users</code>、<code>adapter=users</code>、<code>required_role=admin</code>），但数据落在独立的 <code>users</code> 表而非 <code>items</code> —— 正是设计文档里 <strong>L3 专用存储</strong> 扩展的示例。<br><strong>members 是家庭成员（业务维度），users 是登录账号（身份维度）</strong>：小宝、外婆可以不登录，但条目仍能归属他们；两者通过 <code>member_id</code> 可选绑定。</div>';
+  h+='<div class="card"><h2>角色权限</h2><p class="desc">导航按 required_role 过滤，写操作由后端按角色拦截</p><table><thead><tr><th>角色</th><th>可见模块</th><th>条目</th><th>用户 / 模块管理</th><th>在线备份</th></tr></thead><tbody>'+
+    '<tr><td><span class="role admin">admin</span></td><td>全部</td><td>读写删</td><td>可管理</td><td>可触发</td></tr>'+
+    '<tr><td><span class="role member">member</span></td><td>除 admin 模块</td><td>读写删</td><td>不可</td><td>不可</td></tr>'+
+    '<tr><td><span class="role viewer">viewer</span></td><td>除 admin/member 模块</td><td>只读</td><td>不可</td><td>不可</td></tr>'+
+    '</tbody></table></div>';
+  h+='<div class="card"><h2>账号列表</h2><p class="desc">users 表 · 真实后端密码用 bcrypt 哈希，绝不下发前端</p><table><thead><tr><th>账号</th><th>角色</th><th>绑定成员</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+  DB.users.forEach(x=>{
+    const mb=memberById(x.member_id);
+    const ops=(isAdmin&&x.id!==u.id)
+      ? '<button class="btn ghost sm" data-act="toggleUser" data-id="'+x.id+'">'+(x.enabled?'停用':'启用')+'</button> <button class="btn ghost sm" data-act="roleUser" data-id="'+x.id+'">切换角色</button>'
+      : '<span class="readonly">—</span>';
+    h+='<tr><td><b>'+esc(x.display_name)+'</b> <span class="tag">'+esc(x.username)+'</span></td><td><span class="role '+x.role+'">'+x.role+'</span></td><td>'+(mb?esc(mb.name):'<span style="color:var(--sub)">未绑定</span>')+'</td><td>'+(x.enabled?'<span class="tag meal">启用</span>':'<span class="tag p0">已停用</span>')+'</td><td>'+ops+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  if(isAdmin){
+    h+='<div class="card"><h2>新建账号</h2><p class="desc">对应后端 POST /api/v1/users</p><form id="userForm"><div class="form-grid">'+
+      '<label class="f">用户名<input name="username" required placeholder="登录名"></label>'+
+      '<label class="f">显示名<input name="display_name" placeholder="例如：妈妈"></label>'+
+      '<label class="f">密码<input name="password" type="password" required placeholder="至少 8 位（原型不校验）"></label>'+
+      '<label class="f">角色<select name="role"><option value="member">member 可读写</option><option value="admin">admin 管理员</option><option value="viewer">viewer 只读</option></select></label>'+
+      '<label class="f">绑定家庭成员<select name="member_id"><option value="">不绑定</option>'+DB.members.map(m=>'<option value="'+m.id+'">'+esc(m.name)+'</option>').join('')+'</select></label>'+
+      '</div><div style="margin-top:16px"><button type="submit" class="btn primary">创建账号</button></div></form></div>';
+  }else{
+    h+='<div class="note" style="background:#fff7ed;border-color:#fed7aa;color:#9a3412">当前身份为 <b>'+esc(u.role)+'</b>，账号管理需要 admin 角色。点左上方「切换」换到管理员身份。</div>';
+  }
+  return h;
+}
+
+/* ============ 路由 ============ */
+function render(){
+  renderSide();
+  let h='',title='',sub='';
+  if(state.view==='home'){
+    title='今日概览'; sub=new Date().toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long'})+' · 全家视图'; h=renderHome();
+  }else if(state.view==='__modules__'){
+    title='模块管理'; sub='注册表 / schema_json / 扩展性'; h=renderModules();
+  }else{
+    const mod=modBy(state.view);
+    if(!mod){ state.view='home'; return render(); }
+    title=mod.name; sub=mod.desc||'';
+    if(mod.view==='users') h=renderUsers(mod);
+    else if(mod.view==='calendar'){ h=renderCalendar(mod); }
+    else if(mod.view==='timeline') h=renderTimeline(mod);
+    else h=renderList(mod);
+  }
+  document.getElementById('viewTitle').textContent=title;
+  document.getElementById('viewSub').textContent=sub;
+  document.getElementById('view').innerHTML=h;
+  document.getElementById('globalAdd').style.display =
+    (canWrite() && state.view!=='users' && state.view!=='__modules__')?'':'none';
+}
+function navigate(k){ state.view=k; state.filter='open'; state.kind='全部'; render(); }
+
+/* ============ 弹窗：由 schema_json 生成表单 ============ */
+function openModal(moduleKey,date){
+  if(!canWrite())return;
+  const sel=document.getElementById('modalModule');
+  sel.innerHTML=DB.modules.filter(m=>m.enabled&&(m.adapter||'generic')==='generic'&&canSee(m.required_role)).map(m=>'<option value="'+esc(m.key)+'">'+esc(m.name)+'</option>').join('');
+  sel.value=moduleKey||DB.modules[0].key;
+  renderFormFields(sel.value,date);
+  document.getElementById('mask').classList.remove('hidden');
+}
+function renderFormFields(key,date){
+  const mod=modBy(key)||{schema:['title','occur_at','member_id','note']};
+  const keys=CORE.concat((mod.schema||[]).filter(k=>CORE.indexOf(k)<0));
+  document.getElementById('formFields').innerHTML=keys.map(k=>{
+    const f=field(k); let ctrl='';
+    if(f.type==='member') ctrl='<select name="'+k+'"><option value="">全家</option>'+DB.members.map(m=>'<option value="'+m.id+'">'+esc(m.name)+'</option>').join('')+'</select>';
+    else if(f.type==='textarea') ctrl='<textarea name="'+k+'" placeholder="可选"></textarea>';
+    else if(f.type==='select') ctrl='<select name="'+k+'"><option value="">请选择</option>'+f.options.map(o=>'<option value="'+o+'">'+o+'</option>').join('')+'</select>';
+    else if(f.type==='date') ctrl='<input type="date" name="'+k+'" value="'+(date||TODAY)+'" required>';
+    else if(f.type==='number') ctrl='<input type="number" name="'+k+'" placeholder="可选">';
+    else ctrl='<input type="text" name="'+k+'" '+(f.core?'required':'placeholder="可选"')+'>';
+    return '<label class="f '+(f.type==='textarea'?'full':'')+'">'+f.label+ctrl+'</label>';
+  }).join('');
+}
+function closeModal(){document.getElementById('mask').classList.add('hidden');}
+
+/* ============ 身份切换（原型仅演示角色差异，真实鉴权在 Go 后端） ============ */
+function showLogin(){
+  document.getElementById('loginOptions').innerHTML=DB.users.filter(u=>u.enabled).map(u=>
+    '<div class="login-opt" data-act="pickUser" data-id="'+u.id+'">'+
+    '<div class="ava" style="background:'+(u.role==='admin'?'#ef4444':u.role==='member'?'#5b7cfa':'#94a3b8')+'">'+esc(u.display_name.slice(0,1))+'</div>'+
+    '<div class="txt"><b>'+esc(u.display_name)+' <span class="role '+u.role+'">'+u.role+'</span></b><small>'+esc(u.username)+'</small></div>'+icon('home',16)+'</div>').join('');
+  document.getElementById('loginMask').classList.remove('hidden');
+}
+
+/* ============ 事件 ============ */
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-act]'); if(!t)return;
+  const a=t.dataset.act;
+  if(a==='nav') navigate(t.dataset.key);
+  else if(a==='member'){ state.member=t.dataset.id; render(); }
+  else if(a==='filter'){ state.filter=t.dataset.v; render(); }
+  else if(a==='kind'){ state.kind=t.dataset.v; render(); }
+  else if(a==='prevMonth'){ state.calM--; if(state.calM<0){state.calM=11;state.calY--;} render(); }
+  else if(a==='nextMonth'){ state.calM++; if(state.calM>11){state.calM=0;state.calY++;} render(); }
+  else if(a==='today'){ state.calY=new Date().getFullYear(); state.calM=new Date().getMonth(); render(); }
+  else if(a==='add') openModal(t.dataset.key||(state.view!=='home'&&state.view!=='__modules__'?state.view:null),null);
+  else if(a==='addOn') openModal(t.dataset.key,t.dataset.date);
+  else if(a==='closeModal') closeModal();
+  else if(a==='del'){ if(!canWrite())return; DB.items=DB.items.filter(i=>i.id!==t.dataset.id); save(); render(); }
+  else if(a==='enable'){ if(me().role!=='admin')return; const m=modBy(t.dataset.key); if(m){m.enabled=!m.enabled;save();render();} }
+  else if(a==='reset'){ if(confirm('恢复初始演示数据？当前新增的模块、用户与条目会被清除。')){DB=seed();save();navigate('home');} }
+  else if(a==='switchUser') showLogin();
+  else if(a==='pickUser'){ DB.session=Number(t.dataset.id); save(); document.getElementById('loginMask').classList.add('hidden'); navigate('home'); }
+  else if(a==='toggleUser'){ const x=DB.users.find(u=>u.id===Number(t.dataset.id)); if(x&&x.id!==me().id){x.enabled=!x.enabled;save();render();} }
+  else if(a==='roleUser'){ const x=DB.users.find(u=>u.id===Number(t.dataset.id)); if(x){const order=['viewer','member','admin'];x.role=order[(order.indexOf(x.role)+1)%3];save();render();} }
+});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.id==='modalModule') renderFormFields(t.value,null);
+  else if(t.dataset.act==='toggle'){
+    if(!canWrite())return;
+    const i=DB.items.find(x=>x.id===t.dataset.id);
+    if(i){ i.status=t.checked?'done':'open'; save(); render(); }
+  }
+});
+document.addEventListener('submit',e=>{
+  e.preventDefault();
+  if(e.target.id==='itemForm'){
+    const fd=new FormData(e.target), mk=fd.get('module_key');
+    const mod=modBy(mk); if(!mod)return;
+    const item={id:uid(),module_key:mk,member_id:null,title:'',occur_at:TODAY,end_at:null,status:'open',payload:{},created_at:TODAY};
+    CORE.concat((mod.schema||[]).filter(k=>CORE.indexOf(k)<0)).forEach(k=>{
+      const v=(fd.get(k)||'').trim();
+      if(CORE.indexOf(k)>=0){ if(k==='member_id') item.member_id=v?Number(v):null; else if(v) item[k]=v; }
+      else if(v) item.payload[k]=v;
+    });
+    if(!item.title)return;
+    DB.items.push(item); save(); closeModal(); render();
+  }
+  if(e.target.id==='moduleForm'){
+    const fd=new FormData(e.target);
+    const name=(fd.get('name')||'').trim(); if(!name)return;
+    let key='m'+Date.now().toString(36).slice(-6);
+    if(DB.modules.some(m=>m.key===key)) key+='x';
+    const fields=fd.getAll('fields');
+    DB.modules.push({key:key,name:name,icon:fd.get('icon'),view:fd.get('view'),builtin:false,enabled:true,
+      required_role:fd.get('required_role')||'viewer',adapter:'generic',
+      desc:(fd.get('desc')||'').trim()||'自定义模块（由注册表动态生成）',schema:CORE.concat(fields)});
+    save(); navigate(key);
+  }
+  if(e.target.id==='userForm'){
+    const fd=new FormData(e.target);
+    const name=(fd.get('username')||'').trim(); if(!name)return;
+    if(DB.users.some(u=>u.username===name)){ alert('用户名已存在'); return; }
+    DB.users.push({id:Math.max.apply(null,DB.users.map(u=>u.id))+1,username:name,
+      display_name:(fd.get('display_name')||'').trim()||name,role:fd.get('role'),
+      member_id:fd.get('member_id')?Number(fd.get('member_id')):null,
+      enabled:true,last_login_at:null});
+    save(); render();
+  }
+});
+document.getElementById('mask').addEventListener('click',e=>{ if(e.target.id==='mask') closeModal(); });
+document.getElementById('loginMask').addEventListener('click',e=>{ if(e.target.id==='loginMask') e.currentTarget.classList.add('hidden'); });
+
+save();
+render();
+</script>
+</body>
+</html>

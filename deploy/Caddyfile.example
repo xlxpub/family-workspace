@@ -1,0 +1,6 @@
+# 仅当需要域名 / 公网访问时使用；家庭场景优先 Tailscale 组网内网直连。
+# Caddy 自动申请并续期证书；启用反代后务必把 .env 中 FW_COOKIE_SECURE 设为 1 并重启。
+family.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8080
+}

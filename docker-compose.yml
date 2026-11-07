@@ -1,0 +1,26 @@
+name: family-workspace
+
+services:
+  family:
+    build: .
+    image: family-workspace:latest
+    container_name: family-workspace
+    restart: unless-stopped
+    ports:
+      - "${FW_PORT:-8080}:8080"
+    volumes:
+      # named volume：首次挂载时自动继承镜像内 /data 的属主(uid 10001)，NAS 上无需 chown
+      # 若希望直接在宿主机看到 db 文件，可改成 ./data:/data，并先执行：
+      #   mkdir -p data && sudo chown 10001:10001 data
+      - fw-data:/data
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      FW_DB: /data/family.db
+      FW_ADDR: :8080
+      # 初始管理员口令 / 脚本 API Token；未设置时 compose 直接报错，避免裸奔启动
+      FW_AUTH_PASSWORD: ${FW_AUTH_PASSWORD:?请在 .env 中设置 FW_AUTH_PASSWORD}
+      FW_COOKIE_SECURE: ${FW_COOKIE_SECURE:-0}
+    # 健康检查已在 Dockerfile 中定义，此处自动继承；docker compose ps 可看状态
+
+volumes:
+  fw-data:

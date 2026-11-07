@@ -1,0 +1,31 @@
+# ---- Go 编译产物 ----
+/bin/
+/family-server
+/family-workspace
+*.exe
+*.out
+*.test
+*.prof
+
+# ---- SQLite 数据库 / WAL / 在线备份 ----
+# 含 bcrypt 密码哈希与会话记录，绝对不要提交
+/data/
+/backups/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ---- 本地环境变量（含初始管理员口令 / API Token）----
+.env
+.env.*
+!.env.example
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
