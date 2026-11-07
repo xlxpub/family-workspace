@@ -179,13 +179,14 @@ label.f textarea{resize:vertical;min-height:64px}
     <div class="slabel">模块导航（注册表生成）</div>
     <nav id="nav"></nav>
     <div class="side-foot">
-      <div class="hint">左侧导航由模块注册表自动生成。到「模块管理」新建一个模块试试，无需改代码即可出现。</div>
+      <div class="hint">已连接 <b>Go + SQLite</b> 后端：导航来自 /bootstrap 的模块注册表，所有改动实时写入 family.db。</div>
     </div>
   </aside>
   <main class="main">
     <div class="topbar">
       <div><h1 id="viewTitle">今日概览</h1><div class="sub" id="viewSub"></div></div>
       <div class="spacer"></div>
+      <span class="tag" style="background:#ecfdf5;color:#059669">● 在线 · SQLite</span>
       <button class="btn primary" id="globalAdd" data-act="add">＋ 新增条目</button>
     </div>
     <div id="view"></div>
@@ -194,10 +195,20 @@ label.f textarea{resize:vertical;min-height:64px}
 
 <div class="mask hidden" id="loginMask">
   <div class="modal login-box">
-    <h3>切换身份</h3>
-    <div class="desc">演示用：选择一个账号进入工作台。真实环境由 Go 后端用 Session Cookie + bcrypt 校验密码，此处仅模拟角色差异与权限边界。</div>
-    <div class="avatars" id="loginOptions"></div>
-    <div class="note" style="margin:0">admin 可管理用户与模块；member 可读写条目；viewer 只读。模块注册表按 <code>required_role</code> 过滤导航，写操作由后端按角色拦截。</div>
+    <h3>登录家庭工作台</h3>
+    <div class="desc">后端：Go + SQLite。会话为 HttpOnly Cookie，写操作携带 X-FW-CSRF；密码 bcrypt 哈希，不下发前端。</div>
+    <form id="loginForm">
+      <label class="f full">用户名<input name="username" required autocomplete="username" placeholder="admin"></label>
+      <label class="f full">密码<input name="password" type="password" required autocomplete="current-password" placeholder="请输入密码"></label>
+      <div id="loginErr" style="color:#dc2626;font-size:13px;min-height:18px;margin-top:6px"></div>
+      <div class="foot"><button type="submit" class="btn primary">登录</button></div>
+    </form>
+    <div class="note" style="margin:14px 0 6px">本地演示账号（点击一键登录，体验三种角色）：</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <button type="button" class="btn ghost sm" data-act="quick" data-u="admin" data-p="demo-only-password-12345">admin · 管理员</button>
+      <button type="button" class="btn ghost sm" data-act="quick" data-u="mama" data-p="family123456">mama · 可写</button>
+      <button type="button" class="btn ghost sm" data-act="quick" data-u="guest" data-p="family123456">guest · 只读</button>
+    </div>
   </div>
 </div>
 
@@ -291,21 +302,57 @@ function seed(){
     ]
   };
 }
-let DB;
-try{ DB = JSON.parse(localStorage.getItem(KEY)) || seed(); }catch(e){ DB = seed(); }
-if(!DB || !DB.modules){ DB = seed(); }
-// 兼容旧演示数据：补齐 users / session / users 模块，不丢已有条目
-if(!DB.users || !DB.users.length){ DB.users = seed().users; }
-if(!DB.session){ DB.session = DB.users[0].id; }
-if(!DB.modules.some(m=>m.key==='users')){
-  DB.modules.push({key:'users',name:'用户与权限',icon:'settings',view:'users',builtin:true,enabled:true,
-    required_role:'admin',adapter:'users',desc:'账号、角色与登录会话管理（仅管理员可见）',schema:[]});
+/* ===== 数据层：直连 Go 后端（设计文档 8.6 的替换点） ===== */
+const API_BASE='/api/v1';
+let CSRF='';
+let DB={modules:[],members:[],items:[],users:[],me:null,session:null};
+
+function toast(msg,bad){
+  let el=document.getElementById('fwToast');
+  if(!el){ el=document.createElement('div'); el.id='fwToast';
+    el.style.cssText='position:fixed;right:22px;bottom:22px;z-index:9999;padding:10px 16px;border-radius:10px;color:#fff;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.18)';
+    document.body.appendChild(el); }
+  el.textContent=msg; el.style.background=bad?'#dc2626':'#0f172a'; el.style.display='block';
+  clearTimeout(el._t); el._t=setTimeout(()=>{el.style.display='none';},2200);
 }
-function save(){ localStorage.setItem(KEY, JSON.stringify(DB)); }
+async function api(path,opt){
+  opt=opt||{};
+  const h={'Content-Type':'application/json'};
+  if(CSRF) h['X-FW-CSRF']=CSRF;
+  const r=await fetch(API_BASE+path,{method:opt.method||'GET',headers:h,credentials:'same-origin',
+    body:opt.body===undefined?undefined:JSON.stringify(opt.body)});
+  let j; try{ j=await r.json(); }catch(e){ throw new Error('HTTP '+r.status+' 非 JSON 响应'); }
+  if(!r.ok||!j.ok) throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+  return j.data;
+}
+async function push(path,method,body,rollback){
+  try{ return await api(path,{method:method,body:body}); }
+  catch(e){ if(rollback)rollback(); render(); toast('同步失败：'+e.message,true); return null; }
+}
+function modShape(m){
+  return {key:m.key,name:m.name,icon:m.icon,view:m.view_type,desc:m.desc,
+    builtin:m.builtin,enabled:m.enabled,required_role:m.required_role,adapter:m.adapter,
+    schema:(m.schema||[]).map(f=>f.key),rawSchema:m.schema||[]};
+}
+async function loadAll(){
+  const b=await api('/bootstrap');
+  DB.me=b.current_user; DB.session=b.current_user.id;
+  if(b.csrf_token) CSRF=b.csrf_token;
+  DB.members=b.members||[];
+  DB.modules=(b.modules||[]).map(modShape);
+  const it=await api('/items?limit=200');
+  DB.items=it.items||[];
+  if(DB.me.role==='admin'){
+    try{ const us=await api('/users'); DB.users=us.items||[]; }
+    catch(e){ DB.users=[DB.me]; }
+  }else{ DB.users=[DB.me]; }
+  render();
+}
+function save(){ /* 内存即视图真相；写操作各自 push 到后端持久化 */ }
 
 /* ============ 视图状态 ============ */
 const state = {view:'home', member:'all', calY:new Date().getFullYear(), calM:new Date().getMonth(), kind:'全部', filter:'open'};
-function me(){return DB.users.find(u=>u.id===DB.session)||DB.users[0];}
+function me(){return DB.me||{role:'viewer',username:'',display_name:'未登录'};}
 const RANK={viewer:1,member:2,admin:3};
 function canSee(role){return RANK[me().role]>=RANK[role||'viewer'];}
 function canWrite(){return canSee('member');}
@@ -374,7 +421,7 @@ function rowHtml(i){
   return '<div class="row '+(i.status==='done'?'done':'')+'">'+
     '<input class="cbox" type="checkbox" data-act="toggle" data-id="'+i.id+'" '+(i.status==='done'?'checked':'')+ro+'>'+
     '<div class="main-c"><div class="ttl">'+esc(i.title)+'</div><div class="meta"><span class="tag">'+esc(i.occur_at||'未设日期')+'</span>'+mBadge(i.member_id)+kindTag(i.payload)+prioTag(i.payload)+extras(i)+'<span class="tag">'+esc((modBy(i.module_key)||{}).name||'')+'</span></div></div>'+
-    '<button class="btn ghost sm" data-act="del" data-id="'+i.id+'" title="删除"'+ro+'>删除</button></div>';
+    (canWrite()?'<button class="btn ghost sm" data-act="del" data-id="'+i.id+'" title="删除">删除</button>':'<span class="readonly" style="font-size:12px">只读</span>')+'</div>';
 }
 
 /* ============ 列表视图 ============ */
@@ -448,7 +495,7 @@ function renderModules(){
     '<label class="f">说明<input name="desc" placeholder="一句话描述用途"></label>'+
     '</div><div style="margin-top:14px"><label class="f">选择字段（标题 / 日期 / 归属成员为固定通用列，其余写入 payload）</label><div class="fields">'+
     FIELD_LIB.filter(f=>!f.core).map(f=>'<label><input type="checkbox" name="fields" value="'+f.k+'">'+f.label+'</label>').join('')+
-    '</div></div><div style="margin-top:18px;display:flex;gap:9px"><button type="submit" class="btn primary">创建模块</button><button type="button" class="btn ghost" data-act="reset">重置演示数据</button></div></form></div>';
+    '</div></div><div style="margin-top:18px;display:flex;gap:9px"><button type="submit" class="btn primary">创建模块</button><button type="button" class="btn ghost" data-act="reset">从后端刷新</button></div></form></div>';
   return h;
 }
 
@@ -474,7 +521,7 @@ function renderUsers(mod){
     h+='<div class="card"><h2>新建账号</h2><p class="desc">对应后端 POST /api/v1/users</p><form id="userForm"><div class="form-grid">'+
       '<label class="f">用户名<input name="username" required placeholder="登录名"></label>'+
       '<label class="f">显示名<input name="display_name" placeholder="例如：妈妈"></label>'+
-      '<label class="f">密码<input name="password" type="password" required placeholder="至少 8 位（原型不校验）"></label>'+
+      '<label class="f">密码<input name="password" type="password" required placeholder="至少 8 位，后端 bcrypt 哈希"></label>'+
       '<label class="f">角色<select name="role"><option value="member">member 可读写</option><option value="admin">admin 管理员</option><option value="viewer">viewer 只读</option></select></label>'+
       '<label class="f">绑定家庭成员<select name="member_id"><option value="">不绑定</option>'+DB.members.map(m=>'<option value="'+m.id+'">'+esc(m.name)+'</option>').join('')+'</select></label>'+
       '</div><div style="margin-top:16px"><button type="submit" class="btn primary">创建账号</button></div></form></div>';
@@ -519,32 +566,43 @@ function openModal(moduleKey,date){
   document.getElementById('mask').classList.remove('hidden');
 }
 function renderFormFields(key,date){
-  const mod=modBy(key)||{schema:['title','occur_at','member_id','note']};
-  const keys=CORE.concat((mod.schema||[]).filter(k=>CORE.indexOf(k)<0));
-  document.getElementById('formFields').innerHTML=keys.map(k=>{
-    const f=field(k); let ctrl='';
-    if(f.type==='member') ctrl='<select name="'+k+'"><option value="">全家</option>'+DB.members.map(m=>'<option value="'+m.id+'">'+esc(m.name)+'</option>').join('')+'</select>';
-    else if(f.type==='textarea') ctrl='<textarea name="'+k+'" placeholder="可选"></textarea>';
-    else if(f.type==='select') ctrl='<select name="'+k+'"><option value="">请选择</option>'+f.options.map(o=>'<option value="'+o+'">'+o+'</option>').join('')+'</select>';
-    else if(f.type==='date') ctrl='<input type="date" name="'+k+'" value="'+(date||TODAY)+'" required>';
-    else if(f.type==='number') ctrl='<input type="number" name="'+k+'" placeholder="可选">';
-    else ctrl='<input type="text" name="'+k+'" '+(f.core?'required':'placeholder="可选"')+'>';
-    return '<label class="f '+(f.type==='textarea'?'full':'')+'">'+f.label+ctrl+'</label>';
+  const mod=modBy(key)||{};
+  const fs=(mod.rawSchema&&mod.rawSchema.length)
+    ? mod.rawSchema.map(f=>({k:f.key,label:f.label,type:f.type,options:f.options||[],core:f.core,required:f.required}))
+    : CORE.concat((mod.schema||[]).filter(k=>CORE.indexOf(k)<0)).map(k=>field(k));
+  document.getElementById('formFields').innerHTML=fs.map(f=>{
+    let ctrl='';
+    if(f.type==='member') ctrl='<select name="'+f.k+'"><option value="">全家</option>'+DB.members.map(m=>'<option value="'+m.id+'">'+esc(m.name)+'</option>').join('')+'</select>';
+    else if(f.type==='textarea') ctrl='<textarea name="'+f.k+'" placeholder="可选"></textarea>';
+    else if(f.type==='select') ctrl='<select name="'+f.k+'"><option value="">请选择</option>'+(f.options||[]).map(o=>'<option value="'+o+'">'+o+'</option>').join('')+'</select>';
+    else if(f.type==='date') ctrl='<input type="date" name="'+f.k+'" value="'+(date||TODAY)+'" required>';
+    else if(f.type==='number') ctrl='<input type="number" name="'+f.k+'" placeholder="可选">';
+    else ctrl='<input type="text" name="'+f.k+'" '+(f.required||f.core?'required':'placeholder="可选"')+'>';
+    return '<label class="f '+(f.type==='textarea'?'full':'')+'">'+esc(f.label)+ctrl+'</label>';
   }).join('');
 }
 function closeModal(){document.getElementById('mask').classList.add('hidden');}
 
-/* ============ 身份切换（原型仅演示角色差异，真实鉴权在 Go 后端） ============ */
+/* ============ 登录（Session Cookie + CSRF） ============ */
+async function doLogin(username,password){
+  const err=document.getElementById('loginErr'); err.textContent='';
+  try{
+    const d=await api('/auth/login',{method:'POST',body:{username:username,password:password}});
+    CSRF=d.csrf_token||'';
+    document.getElementById('loginMask').classList.add('hidden');
+    await loadAll();
+    toast('已登录 '+username+'（'+DB.me.role+'）');
+  }catch(e){ err.textContent=e.message; }
+}
 function showLogin(){
-  document.getElementById('loginOptions').innerHTML=DB.users.filter(u=>u.enabled).map(u=>
-    '<div class="login-opt" data-act="pickUser" data-id="'+u.id+'">'+
-    '<div class="ava" style="background:'+(u.role==='admin'?'#ef4444':u.role==='member'?'#5b7cfa':'#94a3b8')+'">'+esc(u.display_name.slice(0,1))+'</div>'+
-    '<div class="txt"><b>'+esc(u.display_name)+' <span class="role '+u.role+'">'+u.role+'</span></b><small>'+esc(u.username)+'</small></div>'+icon('home',16)+'</div>').join('');
+  const f=document.getElementById('loginForm'); f.reset();
+  document.getElementById('loginErr').textContent='';
   document.getElementById('loginMask').classList.remove('hidden');
+  setTimeout(()=>f.querySelector('[name=username]').focus(),50);
 }
 
 /* ============ 事件 ============ */
-document.addEventListener('click',e=>{
+document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-act]'); if(!t)return;
   const a=t.dataset.act;
   if(a==='nav') navigate(t.dataset.key);
@@ -557,64 +615,100 @@ document.addEventListener('click',e=>{
   else if(a==='add') openModal(t.dataset.key||(state.view!=='home'&&state.view!=='__modules__'?state.view:null),null);
   else if(a==='addOn') openModal(t.dataset.key,t.dataset.date);
   else if(a==='closeModal') closeModal();
-  else if(a==='del'){ if(!canWrite())return; DB.items=DB.items.filter(i=>i.id!==t.dataset.id); save(); render(); }
-  else if(a==='enable'){ if(me().role!=='admin')return; const m=modBy(t.dataset.key); if(m){m.enabled=!m.enabled;save();render();} }
-  else if(a==='reset'){ if(confirm('恢复初始演示数据？当前新增的模块、用户与条目会被清除。')){DB=seed();save();navigate('home');} }
-  else if(a==='switchUser') showLogin();
-  else if(a==='pickUser'){ DB.session=Number(t.dataset.id); save(); document.getElementById('loginMask').classList.add('hidden'); navigate('home'); }
-  else if(a==='toggleUser'){ const x=DB.users.find(u=>u.id===Number(t.dataset.id)); if(x&&x.id!==me().id){x.enabled=!x.enabled;save();render();} }
-  else if(a==='roleUser'){ const x=DB.users.find(u=>u.id===Number(t.dataset.id)); if(x){const order=['viewer','member','admin'];x.role=order[(order.indexOf(x.role)+1)%3];save();render();} }
+  else if(a==='del'){
+    if(!canWrite())return;
+    const id=t.dataset.id, old=DB.items.slice();
+    DB.items=DB.items.filter(i=>i.id!==id); render();
+    await push('/items/'+id,'DELETE',undefined,()=>{DB.items=old;});
+  }
+  else if(a==='enable'){
+    if(me().role!=='admin')return;
+    const m=modBy(t.dataset.key); if(!m)return;
+    const old=m.enabled; m.enabled=!m.enabled; render();
+    await push('/modules/'+m.key,'PATCH',{enabled:m.enabled},()=>{m.enabled=old;});
+  }
+  else if(a==='reset'){ await loadAll(); toast('已从后端重新拉取数据'); }
+  else if(a==='switchUser'){
+    try{ await api('/auth/logout',{method:'POST',body:{}}); }catch(_){}
+    CSRF=''; showLogin();
+  }
+  else if(a==='quick'){ await doLogin(t.dataset.u,t.dataset.p); }
+  else if(a==='toggleUser'){
+    const x=DB.users.find(u=>u.id===Number(t.dataset.id)); if(!x||x.id===me().id)return;
+    const old=x.enabled; x.enabled=!x.enabled; render();
+    await push('/users/'+x.id,'PATCH',{enabled:x.enabled},()=>{x.enabled=old;});
+  }
+  else if(a==='roleUser'){
+    const x=DB.users.find(u=>u.id===Number(t.dataset.id)); if(!x)return;
+    const order=['viewer','member','admin'], old=x.role;
+    x.role=order[(order.indexOf(x.role)+1)%3]; render();
+    await push('/users/'+x.id,'PATCH',{role:x.role},()=>{x.role=old;});
+  }
 });
-document.addEventListener('change',e=>{
+document.addEventListener('change',async e=>{
   const t=e.target;
   if(t.id==='modalModule') renderFormFields(t.value,null);
   else if(t.dataset.act==='toggle'){
     if(!canWrite())return;
     const i=DB.items.find(x=>x.id===t.dataset.id);
-    if(i){ i.status=t.checked?'done':'open'; save(); render(); }
+    if(i){
+      const old=i.status; i.status=t.checked?'done':'open'; render();
+      await push('/items/'+i.id,'PATCH',{status:i.status},()=>{i.status=old;});
+    }
   }
 });
-document.addEventListener('submit',e=>{
+document.addEventListener('submit',async e=>{
   e.preventDefault();
+  if(e.target.id==='loginForm'){
+    const fd=new FormData(e.target);
+    await doLogin((fd.get('username')||'').trim(),fd.get('password')||'');
+    return;
+  }
   if(e.target.id==='itemForm'){
     const fd=new FormData(e.target), mk=fd.get('module_key');
     const mod=modBy(mk); if(!mod)return;
-    const item={id:uid(),module_key:mk,member_id:null,title:'',occur_at:TODAY,end_at:null,status:'open',payload:{},created_at:TODAY};
+    const item={module_key:mk,member_id:null,title:'',occur_at:TODAY,status:'open',payload:{}};
     CORE.concat((mod.schema||[]).filter(k=>CORE.indexOf(k)<0)).forEach(k=>{
       const v=(fd.get(k)||'').trim();
       if(CORE.indexOf(k)>=0){ if(k==='member_id') item.member_id=v?Number(v):null; else if(v) item[k]=v; }
       else if(v) item.payload[k]=v;
     });
     if(!item.title)return;
-    DB.items.push(item); save(); closeModal(); render();
+    const d=await push('/items','POST',item);
+    if(d){ closeModal(); await loadAll(); toast('已写入 SQLite：'+item.title); }
   }
   if(e.target.id==='moduleForm'){
     const fd=new FormData(e.target);
     const name=(fd.get('name')||'').trim(); if(!name)return;
-    let key='m'+Date.now().toString(36).slice(-6);
-    if(DB.modules.some(m=>m.key===key)) key+='x';
-    const fields=fd.getAll('fields');
-    DB.modules.push({key:key,name:name,icon:fd.get('icon'),view:fd.get('view'),builtin:false,enabled:true,
-      required_role:fd.get('required_role')||'viewer',adapter:'generic',
-      desc:(fd.get('desc')||'').trim()||'自定义模块（由注册表动态生成）',schema:CORE.concat(fields)});
-    save(); navigate(key);
+    const key='m'+Date.now().toString(36).slice(-6);
+    const fields=fd.getAll('fields').map(k=>{const f=field(k);return {key:f.k,label:f.label,type:f.type,options:f.options||[]};});
+    const body={key:key,name:name,icon:fd.get('icon'),view_type:fd.get('view'),
+      desc:(fd.get('desc')||'').trim()||'自定义模块（由注册表动态生成）',
+      required_role:fd.get('required_role')||'viewer',schema:fields};
+    const d=await push('/modules','POST',body);
+    if(d){ await loadAll(); navigate(key); toast('新模块已注册，导航自动生成'); }
   }
   if(e.target.id==='userForm'){
     const fd=new FormData(e.target);
     const name=(fd.get('username')||'').trim(); if(!name)return;
-    if(DB.users.some(u=>u.username===name)){ alert('用户名已存在'); return; }
-    DB.users.push({id:Math.max.apply(null,DB.users.map(u=>u.id))+1,username:name,
-      display_name:(fd.get('display_name')||'').trim()||name,role:fd.get('role'),
-      member_id:fd.get('member_id')?Number(fd.get('member_id')):null,
-      enabled:true,last_login_at:null});
-    save(); render();
+    const body={username:name,display_name:(fd.get('display_name')||'').trim()||name,
+      password:fd.get('password')||'',role:fd.get('role'),
+      member_id:fd.get('member_id')?Number(fd.get('member_id')):null};
+    const d=await push('/users','POST',body);
+    if(d){ await loadAll(); toast('账号已创建（密码 bcrypt 哈希）'); }
   }
 });
 document.getElementById('mask').addEventListener('click',e=>{ if(e.target.id==='mask') closeModal(); });
-document.getElementById('loginMask').addEventListener('click',e=>{ if(e.target.id==='loginMask') e.currentTarget.classList.add('hidden'); });
 
-save();
-render();
+/* ===== 启动：已登录直接拉数据，否则显示登录框 ===== */
+(async function boot(){
+  render();
+  try{
+    const st=await api('/auth/status');
+    if(st.authenticated){ CSRF=st.csrf_token||''; await loadAll(); toast('已连接 Go + SQLite 后端'); }
+    else showLogin();
+  }catch(e){ showLogin(); }
+})();
 </script>
 </body>
 </html>
