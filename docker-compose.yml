@@ -7,7 +7,9 @@ services:
     container_name: family-workspace
     restart: unless-stopped
     ports:
-      - "${FW_PORT:-8080}:8080"
+      # FW_BIND 默认 0.0.0.0（家里同一 WiFi 直连）；云主机上设为 127.0.0.1，
+      # 只让本机反代/隧道访问，公网入口只留 443。
+      - "${FW_BIND:-0.0.0.0}:${FW_PORT:-8080}:8080"
     volumes:
       # named volume：首次挂载时自动继承镜像内 /data 的属主(uid 10001)，NAS 上无需 chown
       # 若希望直接在宿主机看到 db 文件，可改成 ./data:/data，并先执行：

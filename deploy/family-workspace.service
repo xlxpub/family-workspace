@@ -10,7 +10,9 @@ Group=fw
 WorkingDirectory=/opt/family-workspace
 EnvironmentFile=/opt/family-workspace/.env
 Environment=FW_DB=/opt/family-workspace/data/family.db
-Environment=FW_ADDR=:8080
+# 只监听回环：公网入口交给 Caddy（deploy/Caddyfile.example），避免 8080 直接暴露。
+# 若不需要反代、希望局域网直连，改成 FW_ADDR=:8080。
+Environment=FW_ADDR=127.0.0.1:8080
 Environment=TZ=Asia/Shanghai
 ExecStart=/opt/family-workspace/bin/family-server
 Restart=always

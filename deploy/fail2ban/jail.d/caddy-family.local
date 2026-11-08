@@ -1,0 +1,26 @@
+# fail2ban jail：按来源 IP 封禁反复登录失败的客户端。
+#
+# 阈值说明：
+#   应用自身是「同一账号失败 5 次锁 15 分钟」，账号维度。
+#   这里是「同一 IP 10 分钟内失败 8 次封 1 小时」，网络维度。
+#   maxretry 取得比 5 大，避免家人手滑几次就被封；脚本爆破仍然会被拦下。
+#
+# 启用前提：Caddy 已把 JSON 访问日志写到 /var/log/caddy/family.log
+#   （见 deploy/Caddyfile.example 的 log 段）。
+#
+# 常用排查：
+#   sudo fail2ban-client status caddy-family
+#   sudo fail2ban-client set caddy-family unbanip 1.2.3.4
+
+[caddy-family]
+enabled  = true
+port     = http,https
+filter   = caddy-family
+logpath  = /var/log/caddy/family.log
+maxretry = 8
+findtime = 600
+bantime  = 3600
+
+# 只封单个 IP（Caddy 日志里是真实来源地址；若前面还有 CDN/隧道，
+# remote_ip 会变成 CDN 出口，此时应改用 client_ip 字段并关闭 dns 反查）。
+backend  = auto

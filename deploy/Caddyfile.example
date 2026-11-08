@@ -1,6 +1,33 @@
-# 仅当需要域名 / 公网访问时使用；家庭场景优先 Tailscale 组网内网直连。
-# Caddy 自动申请并续期证书；启用反代后务必把 .env 中 FW_COOKIE_SECURE 设为 1 并重启。
+# Caddy 反向代理：公网 HTTPS 入口（域名 + 自动证书）。
+#
+# 前置条件：
+#   1. 域名 A 记录指向本机公网 IP，安全组放行 80/tcp（ACME HTTP-01）与 443/tcp
+#   2. 服务只监听回环：FW_BIND=127.0.0.1（Docker）或 FW_ADDR=127.0.0.1:8080（systemd）
+#   3. .env 里 FW_COOKIE_SECURE=1，否则 HTTPS 下浏览器不发送会话 Cookie，登录后一直跳回登录框
+#   4. 内地节点用域名走 80/443 需 ICP 备案；免备案请换香港/海外节点，或改用 Tailscale 组网
+#
+# 用法：
+#   sudo cp deploy/Caddyfile.example /etc/caddy/Caddyfile
+#   sudo sed -i 's/family.example.com/你的域名/' /etc/caddy/Caddyfile
+#   sudo mkdir -p /var/log/caddy && sudo chown caddy:caddy /var/log/caddy
+#   sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+#
+# 注意：这里不做 IP 白名单 —— 手机在移动网络下 IP 不固定，白名单不可行。
+# 防线改为：HTTPS 加密 + 应用账号鉴权 + 反代层限速封禁（见 deploy/fail2ban/）。
+
 family.example.com {
-    encode zstd gzip
-    reverse_proxy 127.0.0.1:8080
+	encode zstd gzip
+
+	# 上过 HTTPS 后禁止降级到 http
+	header Strict-Transport-Security "max-age=31536000"
+
+	# JSON 访问日志：fail2ban 依赖它统计 /auth/login 的 401
+	log {
+		output file /var/log/caddy/family.log
+		format json
+	}
+
+	# 登录接口不做额外缓冲，保证 401 与锁定响应及时返回并被记录；
+	# 真正的限速/封禁交给 fail2ban，避免在 Caddy 里引入第三方限速插件。
+	reverse_proxy 127.0.0.1:8080
 }
