@@ -49,6 +49,11 @@ nav{display:flex;flex-direction:column;gap:3px;margin-top:6px}
 .btn.sm{padding:5px 10px;font-size:12px;border-radius:7px}
 .btn.ghost{border:0;background:transparent;color:var(--sub)}
 .btn.ghost:hover{color:var(--danger);background:#fff1f1}
+/* 删除：默认淡出，悬停/键盘聚焦时出现；触屏设备常显 */
+.iconbtn{border:0;background:transparent;color:var(--sub);padding:4px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;opacity:0;transition:.15s;flex:0 0 auto;line-height:0}
+.iconbtn:hover{color:var(--danger);background:#fff1f1}
+.row:hover .iconbtn,.tl-item:hover .iconbtn,.cal .cell:hover .iconbtn,.iconbtn:focus-visible{opacity:1}
+@media(hover:none){.iconbtn{opacity:1}}
 
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:18px}
 .card h2{margin:0 0 4px;font-size:15px}
@@ -91,7 +96,8 @@ nav{display:flex;flex-direction:column;gap:3px;margin-top:6px}
 .tl-item.k-visit:before{background:var(--brand);box-shadow:0 0 0 2px var(--brand-soft)}
 .tl-date{font-size:11px;color:var(--sub);letter-spacing:.5px}
 .tl-body{background:#fafbfe;border:1px solid var(--line);border-radius:10px;padding:11px 14px;margin-top:5px}
-.tl-body .ttl{font-weight:600}
+.tl-body .ttl-row{display:flex;align-items:flex-start;gap:8px}
+.tl-body .ttl-row .ttl{flex:1;min-width:0;font-weight:600}
 
 /* ---------- 日历 ---------- */
 .cal-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
@@ -105,9 +111,13 @@ nav{display:flex;flex-direction:column;gap:3px;margin-top:6px}
 .cal .cell.today{background:#f5f7ff}
 .cal .dnum{font-size:12px;font-weight:600;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center}
 .cal .cell.today .dnum span:first-child{background:var(--brand);color:#fff;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px}
-.ev{font-size:10.5px;padding:2px 5px;border-radius:5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px}
+.ev{font-size:10.5px;padding:2px 5px;border-radius:5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px;cursor:default}
 .ev .dot{width:5px;height:5px;flex:0 0 5px}
-.more{font-size:10px;color:var(--sub)}
+.ev-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ev .iconbtn{padding:0;width:14px;height:14px;border-radius:4px}
+.ev .iconbtn svg{width:11px;height:11px}
+button.more{border:0;background:transparent;color:var(--sub);padding:1px 2px;font-size:10px;text-align:left;border-radius:4px}
+button.more:hover{color:var(--brand);background:var(--brand-soft)}
 
 /* ---------- 模块管理 ---------- */
 table{width:100%;border-collapse:collapse;font-size:13px}
@@ -263,7 +273,8 @@ const ICONS = {
   grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   book:'<path d="M4 4h9a3 3 0 0 1 3 3v13a3 3 0 0 0-3-3H4z"/><path d="M20 4h-1a3 3 0 0 0-3 3v13a3 3 0 0 1 3-3h1z"/>',
   chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
-  settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>'
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+  trash:'<path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>'
 };
 function icon(n,s){s=s||18;return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(ICONS[n]||ICONS.grid)+'</svg>';}
 const VIEW_NAMES = {list:'列表',calendar:'日历',timeline:'时间轴',users:'用户'};
@@ -330,13 +341,21 @@ let aiEnabled=false, aiParsing=false, itemSaving=false;
 let draftQueue=[], draftIndex=0;
 let DB={modules:[],members:[],items:[],users:[],me:null,session:null};
 
-function toast(msg,bad){
+function toast(msg,bad,action){
   let el=document.getElementById('fwToast');
   if(!el){ el=document.createElement('div'); el.id='fwToast';
-    el.style.cssText='position:fixed;right:22px;bottom:22px;z-index:9999;padding:10px 16px;border-radius:10px;color:#fff;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.18)';
+    el.style.cssText='position:fixed;right:22px;bottom:22px;z-index:9999;padding:10px 16px;border-radius:10px;color:#fff;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.18);display:flex;align-items:center;gap:14px';
     document.body.appendChild(el); }
-  el.textContent=msg; el.style.background=bad?'#dc2626':'#0f172a'; el.style.display='block';
-  clearTimeout(el._t); el._t=setTimeout(()=>{el.style.display='none';},2200);
+  el.innerHTML='<span>'+esc(msg)+'</span>';
+  if(action){
+    const btn=document.createElement('button');
+    btn.type='button'; btn.textContent=action.label;
+    btn.style.cssText='border:0;background:transparent;color:#bfdbfe;font-weight:600;font-size:13px;padding:0;cursor:pointer;text-decoration:underline;white-space:nowrap';
+    btn.onclick=()=>{ el.style.display='none'; clearTimeout(el._t); action.onClick(); };
+    el.appendChild(btn);
+  }
+  el.style.background=bad?'#dc2626':'#0f172a'; el.style.display='flex';
+  clearTimeout(el._t); el._t=setTimeout(()=>{el.style.display='none';},action?6000:2200);
 }
 async function api(path,opt){
   opt=opt||{};
@@ -375,7 +394,7 @@ async function loadAll(){
 function save(){ /* 内存即视图真相；写操作各自 push 到后端持久化 */ }
 
 /* ============ 视图状态 ============ */
-const state = {view:'home', member:'all', calY:new Date().getFullYear(), calM:new Date().getMonth(), kind:'全部', filter:'open'};
+const state = {view:'home', member:'all', calY:new Date().getFullYear(), calM:new Date().getMonth(), kind:'全部', filter:'open', calOpen:''};
 function me(){return DB.me||{role:'viewer',username:'',display_name:'未登录'};}
 const RANK={viewer:1,member:2,admin:3};
 function canSee(role){return RANK[me().role]>=RANK[role||'viewer'];}
@@ -389,6 +408,8 @@ function mBadge(id){const m=memberById(id);if(!m)return '<span class="mbadge">�
 function kindTag(p){const k=p.kind;if(!k)return '';const cls={'吃饭':'meal','生病':'illness','就医':'visit'}[k]||'';return '<span class="tag '+cls+'">'+esc(k)+'</span>';}
 function prioTag(p){if(!p.priority)return '';return '<span class="tag '+p.priority.toLowerCase()+'">'+esc(p.priority)+'</span>';}
 function extras(it){return Object.keys(it.payload||{}).filter(k=>it.payload[k]!==''&&it.payload[k]!=null&&['kind','priority'].indexOf(k)<0).slice(0,2).map(k=>'<span class="tag">'+esc(field(k).label)+'：'+esc(it.payload[k])+'</span>').join('');}
+/* 列表 / 时间轴 / 日历共用的删除按钮：只读账号不渲染，避免看起来能点却无效 */
+function delBtn(i){return canWrite()?'<button class="iconbtn" type="button" data-act="del" data-id="'+esc(i.id)+'" title="删除「'+esc(i.title)+'」" aria-label="删除「'+esc(i.title)+'」">'+icon('trash',15)+'</button>':'';}
 
 /* ============ 侧栏 ============ */
 function renderSide(){
@@ -425,7 +446,7 @@ function renderHome(){
   h+='</div>';
 
   h+='<div class="card"><h2>未来 7 天提醒</h2><p class="desc">含就医、日历、待办截止</p>';
-  h+= soon.length? soon.slice(0,7).map(i=>'<div class="row"><div class="main-c"><div class="ttl">'+esc(i.title)+'</div><div class="meta"><span class="tag soon">'+esc(i.occur_at)+'</span>'+mBadge(i.member_id)+kindTag(i.payload)+'<span class="tag">'+esc((modBy(i.module_key)||{}).name||'')+'</span></div></div></div>').join('') : '<div class="empty">近期没有安排</div>';
+  h+= soon.length? soon.slice(0,7).map(i=>'<div class="row"><div class="main-c"><div class="ttl">'+esc(i.title)+'</div><div class="meta"><span class="tag soon">'+esc(i.occur_at)+'</span>'+mBadge(i.member_id)+kindTag(i.payload)+'<span class="tag">'+esc((modBy(i.module_key)||{}).name||'')+'</span></div></div>'+delBtn(i)+'</div>').join('') : '<div class="empty">近期没有安排</div>';
   h+='</div></div>';
 
   h+='<div class="card"><h2>待办速览</h2><p class="desc">按优先级与日期排序，可直接勾选完成</p>';
@@ -438,14 +459,14 @@ function stat(n,t,cls){return '<div class="stat '+cls+'"><div class="n">'+n+'</d
 function tlItem(i){
   const k={'吃饭':'k-meal','生病':'k-illness','就医':'k-visit'}[i.payload.kind]||'';
   return '<div class="tl-item '+k+'"><div class="tl-date">'+esc(i.occur_at||'未设日期')+' · '+esc((modBy(i.module_key)||{}).name||'')+'</div>'+
-    '<div class="tl-body"><div class="ttl">'+esc(i.title)+'</div><div class="meta" style="font-size:12px;color:var(--sub);display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'+mBadge(i.member_id)+kindTag(i.payload)+prioTag(i.payload)+extras(i)+'</div></div></div>';
+    '<div class="tl-body"><div class="ttl-row"><div class="ttl">'+esc(i.title)+'</div>'+delBtn(i)+'</div><div class="meta" style="font-size:12px;color:var(--sub);display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'+mBadge(i.member_id)+kindTag(i.payload)+prioTag(i.payload)+extras(i)+'</div></div></div>';
 }
 function rowHtml(i){
   const ro=canWrite()?'':' disabled';
   return '<div class="row '+(i.status==='done'?'done':'')+'">'+
     '<input class="cbox" type="checkbox" data-act="toggle" data-id="'+i.id+'" '+(i.status==='done'?'checked':'')+ro+'>'+
     '<div class="main-c"><div class="ttl">'+esc(i.title)+'</div><div class="meta"><span class="tag">'+esc(i.occur_at||'未设日期')+'</span>'+mBadge(i.member_id)+kindTag(i.payload)+prioTag(i.payload)+extras(i)+'<span class="tag">'+esc((modBy(i.module_key)||{}).name||'')+'</span></div></div>'+
-    (canWrite()?'<button class="btn ghost sm" data-act="del" data-id="'+i.id+'" title="删除">删除</button>':'<span class="readonly" style="font-size:12px">只读</span>')+'</div>';
+    delBtn(i)+'</div>';
 }
 
 /* ============ 列表视图 ============ */
@@ -488,13 +509,13 @@ function renderCalendar(mod){
   ['一','二','三','四','五','六','日'].forEach(w=>h+='<div class="wd">周'+w+'</div>');
   for(let n=0;n<42;n++){
     const d=new Date(start); d.setDate(start.getDate()+n);
-    const ds=fmt(d), dim=d.getMonth()!==m, evs=byDate[ds]||[];
+    const ds=fmt(d), dim=d.getMonth()!==m, evs=byDate[ds]||[], open=state.calOpen===ds;
     h+='<div class="cell '+(dim?'dim ':'')+(ds===TODAY?'today':'')+'" data-act="addOn" data-date="'+ds+'" data-key="'+esc(mod.key)+'"><div class="dnum"><span>'+d.getDate()+'</span></div>';
-    evs.slice(0,3).forEach(i=>{const mm=memberById(i.member_id);h+='<div class="ev" style="background:'+(mm?mm.color+'18':'#eef2ff')+'"><i class="dot" style="background:'+(mm?mm.color:'#5b7cfa')+'"></i>'+esc(i.title)+'</div>';});
-    if(evs.length>3) h+='<div class="more">+'+(evs.length-3)+' 条</div>';
+    (open?evs:evs.slice(0,3)).forEach(i=>{const mm=memberById(i.member_id);h+='<div class="ev" data-act="calEvent" data-date="'+ds+'" style="background:'+(mm?mm.color+'18':'#eef2ff')+'"><i class="dot" style="background:'+(mm?mm.color:'#5b7cfa')+'"></i><span class="ev-t">'+esc(i.title)+'</span>'+delBtn(i)+'</div>';});
+    if(evs.length>3) h+='<button type="button" class="more" data-act="calExpand" data-date="'+ds+'">'+(open?'收起':'+'+(evs.length-3)+' 条')+'</button>';
     h+='</div>';
   }
-  return h+'</div><p class="desc" style="margin:12px 0 0">点任意日期格可直接新增；成员按颜色区分。真实实现中，待办截止日与「就医日」会作为同源条目叠加显示在此。</p></div>';
+  return h+'</div><p class="desc" style="margin:12px 0 0">点任意空白日期格可直接新增；悬停事件可删除，点「+N 条」或事件本身展开当天全部安排。成员按颜色区分。真实实现中，待办截止日与「就医日」会作为同源条目叠加显示在此。</p></div>';
 }
 
 /* ============ 模块管理（扩展能力演示） ============ */
@@ -579,7 +600,7 @@ function render(){
   document.getElementById('globalAdd').style.display =
     (canWrite() && state.view!=='users' && state.view!=='__modules__')?'':'none';
 }
-function navigate(k){ state.view=k; state.filter='open'; state.kind='全部'; render(); }
+function navigate(k){ state.view=k; state.filter='open'; state.kind='全部'; state.calOpen=''; render(); }
 
 /* ============ 弹窗：由 schema_json 生成表单 ============ */
 function writableModules(){
@@ -694,9 +715,10 @@ document.addEventListener('click',async e=>{
   else if(a==='member'){ state.member=t.dataset.id; render(); }
   else if(a==='filter'){ state.filter=t.dataset.v; render(); }
   else if(a==='kind'){ state.kind=t.dataset.v; render(); }
-  else if(a==='prevMonth'){ state.calM--; if(state.calM<0){state.calM=11;state.calY--;} render(); }
-  else if(a==='nextMonth'){ state.calM++; if(state.calM>11){state.calM=0;state.calY++;} render(); }
-  else if(a==='today'){ state.calY=new Date().getFullYear(); state.calM=new Date().getMonth(); render(); }
+  else if(a==='prevMonth'){ state.calM--; if(state.calM<0){state.calM=11;state.calY--;} state.calOpen=''; render(); }
+  else if(a==='nextMonth'){ state.calM++; if(state.calM>11){state.calM=0;state.calY++;} state.calOpen=''; render(); }
+  else if(a==='today'){ state.calY=new Date().getFullYear(); state.calM=new Date().getMonth(); state.calOpen=''; render(); }
+  else if(a==='calExpand'||a==='calEvent'){ const ds=t.dataset.date; state.calOpen=state.calOpen===ds?'':ds; render(); }
   else if(a==='add') openModal(t.dataset.key||(state.view!=='home'&&state.view!=='__modules__'?state.view:null),null);
   else if(a==='addOn') openModal(t.dataset.key,t.dataset.date);
   else if(a==='closeModal') closeModal();
@@ -705,9 +727,22 @@ document.addEventListener('click',async e=>{
   else if(a==='draftSkip'){if(!itemSaving)nextDraft();}
   else if(a==='del'){
     if(!canWrite())return;
-    const id=t.dataset.id, old=DB.items.slice();
-    DB.items=DB.items.filter(i=>i.id!==id); render();
-    await push('/items/'+id,'DELETE',undefined,()=>{DB.items=old;});
+    const id=String(t.dataset.id), idx=DB.items.findIndex(i=>String(i.id)===id);
+    if(idx<0)return;
+    const it=DB.items[idx], old=DB.items.slice();
+    DB.items=DB.items.filter(x=>String(x.id)!==id); render();
+    const d=await push('/items/'+encodeURIComponent(id),'DELETE',undefined,()=>{DB.items=old;});
+    if(!d)return;
+    // 软删除 + 撤销：误删不用重新填写，恢复后 id 与所有字段保持不变。
+    toast('已删除「'+it.title+'」',false,{label:'撤销',onClick:async()=>{
+      try{
+        await api('/items/'+encodeURIComponent(id)+'/restore',{method:'POST',body:{}});
+        await loadAll(); toast('已恢复「'+it.title+'」');
+      }catch(error){
+        toast('恢复失败：'+error.message,true);
+        try{await loadAll();}catch(_){}
+      }
+    }});
   }
   else if(a==='enable'){
     if(me().role!=='admin')return;

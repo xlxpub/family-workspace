@@ -232,6 +232,23 @@ func TestItemCRUDAndSoftDelete(t *testing.T) {
 	if code != 404 {
 		t.Fatalf("重复删除应 404, got %d", code)
 	}
+
+	// 撤销删除：软删只是标记，恢复后 id / 标题 / payload 原样返回。
+	code, env = call(t, srv, "POST", "/api/v1/items/"+id+"/restore", nil, nil)
+	if code != 200 || dataMap(t, env)["id"] != id {
+		t.Fatalf("恢复失败: %d %#v", code, env)
+	}
+	code, env = call(t, srv, "GET", "/api/v1/items/"+id, nil, nil)
+	if code != 200 || dataMap(t, env)["title"] != "测试待办" {
+		t.Fatalf("恢复后应可查询: %d %#v", code, env)
+	}
+	if dataMap(t, env)["payload"].(map[string]any)["priority"] != "P1" {
+		t.Fatal("恢复后 payload 丢失")
+	}
+	code, _ = call(t, srv, "POST", "/api/v1/items/"+id+"/restore", nil, nil)
+	if code != 404 {
+		t.Fatalf("重复恢复应 404, got %d", code)
+	}
 }
 
 // 首页一次聚合跨模块数据，且能识别「未来就医」。

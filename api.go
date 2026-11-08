@@ -478,9 +478,33 @@ func (a *API) createItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) itemDetail(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/api/v1/items/")
-	if id == "" || strings.Contains(id, "/") {
+	id, action := strings.TrimPrefix(r.URL.Path, "/api/v1/items/"), ""
+	if i := strings.Index(id, "/"); i >= 0 {
+		id, action = id[:i], id[i+1:]
+	}
+	if id == "" || (action != "" && action != "restore") {
 		badRequest(w, "条目 id 非法")
+		return
+	}
+	// 撤销删除：软删只写 deleted_at，恢复时原 id 与全部字段保持不变。
+	if action == "restore" {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		if !a.requireRole(w, r, "member") {
+			return
+		}
+		if err := a.store.RestoreItem(r.Context(), id); err != nil {
+			failErr(w, err)
+			return
+		}
+		it, err := a.store.GetItem(r.Context(), id)
+		if err != nil {
+			failErr(w, err)
+			return
+		}
+		ok(w, it)
 		return
 	}
 	switch r.Method {

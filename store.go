@@ -788,6 +788,24 @@ func (s *Store) SoftDeleteItem(ctx context.Context, id string) error {
 	return nil
 }
 
+// RestoreItem 撤销软删除：只对已标记 deleted_at 的记录生效，重复恢复返回 ErrNotFound。
+func (s *Store) RestoreItem(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE items SET deleted_at=NULL, updated_at=? WHERE id=? AND deleted_at IS NOT NULL`,
+		nowStr(), id)
+	if err != nil {
+		return fmt.Errorf("恢复条目: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("读取影响行数: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // ---------------- 首页跨模块聚合 ----------------
 
 func (s *Store) Overview(ctx context.Context, date string, days int) (Overview, error) {
