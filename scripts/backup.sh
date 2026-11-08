@@ -17,6 +17,10 @@ set +a
 PORT="${FW_PORT:-8080}"
 KEEP_DAYS="${FW_BACKUP_KEEP_DAYS:-7}"
 
+# 容器运行时与 Makefile 保持一致；Podman 机器上可 COMPOSE="podman compose" ./scripts/backup.sh
+COMPOSE="${COMPOSE:-docker compose}"
+read -ra COMPOSE_CMD <<< "${COMPOSE}"
+
 echo "[1/3] 触发在线热备 ..."
 curl -fsS -X POST \
   -H "X-FW-Token: ${FW_AUTH_PASSWORD}" \
@@ -24,7 +28,7 @@ curl -fsS -X POST \
 
 mkdir -p ./backups
 echo "[2/3] 从数据卷拉取备份文件 ..."
-docker compose cp family:/data/backup/. ./backups/ >/dev/null
+"${COMPOSE_CMD[@]}" cp family:/data/backup/. ./backups/ >/dev/null
 
 echo "[3/3] 清理 ${KEEP_DAYS} 天前的备份 ..."
 find ./backups -type f -name 'family-*.db' -mtime "+${KEEP_DAYS}" -delete

@@ -1,5 +1,11 @@
 SHELL := /bin/bash
 GO ?= go
+# 容器运行时：默认 docker compose。
+# CentOS / RHEL 上装的是 Podman 时：make up COMPOSE="podman compose"
+# （alias docker=podman 只对交互式 shell 生效，make 的 recipe 不会继承别名）
+COMPOSE ?= docker compose
+# 一并传给 recipe（scripts/backup.sh 读同名环境变量）
+export COMPOSE
 # 锁定工具链，避免 go 命令自动升级到高于 go.mod 的版本
 export GOTOOLCHAIN := local
 
@@ -27,19 +33,19 @@ local: ## 本机一键启动（macOS / Linux，自动读取 .env，不依赖 Doc
 	./scripts/start-local.sh
 
 image: ## 构建 Docker 镜像
-	docker compose build
+	$(COMPOSE) build
 
-up: ## 构建并后台启动（需先准备 .env）
-	docker compose up -d --build
+up: ## 构建并后台启动（需先准备 .env；Podman 用 COMPOSE="podman compose"）
+	$(COMPOSE) up -d --build
 
 down: ## 停止并移除容器（数据卷保留）
-	docker compose down
+	$(COMPOSE) down
 
 logs: ## 跟踪日志
-	docker compose logs -f --tail=100
+	$(COMPOSE) logs -f --tail=100
 
 ps: ## 查看容器与健康状态
-	docker compose ps
+	$(COMPOSE) ps
 
 backup: ## 触发在线热备并拉取到 ./backups
 	./scripts/backup.sh
