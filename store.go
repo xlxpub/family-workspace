@@ -728,10 +728,18 @@ func (s *Store) UpdateItem(ctx context.Context, id string, p ItemPatch) (Item, e
 		it.Title = *p.Title
 	}
 	if p.OccurAt != nil {
-		it.OccurAt = p.OccurAt
+		if *p.OccurAt == "" {
+			it.OccurAt = nil // 空串 = 清除日期
+		} else {
+			it.OccurAt = p.OccurAt
+		}
 	}
 	if p.EndAt != nil {
-		it.EndAt = p.EndAt
+		if *p.EndAt == "" {
+			it.EndAt = nil
+		} else {
+			it.EndAt = p.EndAt
+		}
 	}
 	if p.Status != nil {
 		it.Status = *p.Status

@@ -251,6 +251,66 @@ func TestItemCRUDAndSoftDelete(t *testing.T) {
 	}
 }
 
+// 编辑条目（前端行内「编辑」按钮走 PATCH）：改标题/日期/成员/状态/个性字段，
+// 空日期表示清除，payload 传 null 表示清空该字段，非法日期仍应拒绝。
+func TestItemEditPatch(t *testing.T) {
+	srv, _ := newTestAPI(t, "")
+	code, env := call(t, srv, "POST", "/api/v1/items", map[string]any{
+		"module_key": "todo", "title": "买菜", "occur_at": "2026-03-01",
+		"end_at": "2026-03-02", "payload": map[string]any{"priority": "P2", "note": "只买蔬菜"},
+	}, nil)
+	if code != 201 {
+		t.Fatalf("创建失败: %d %#v", code, env)
+	}
+	id := dataMap(t, env)["id"].(string)
+
+	code, env = call(t, srv, "PATCH", "/api/v1/items/"+id, map[string]any{
+		"title": "买菜（改）", "occur_at": "2026-03-05", "status": "done",
+		"member_id": 2, "payload": map[string]any{"priority": "P0", "note": nil},
+	}, nil)
+	if code != 200 {
+		t.Fatalf("编辑失败: %d %#v", code, env)
+	}
+	d := dataMap(t, env)
+	if d["title"] != "买菜（改）" || d["occur_at"] != "2026-03-05" || d["status"] != "done" {
+		t.Fatalf("核心字段未更新: %#v", d)
+	}
+	if d["member_id"] != float64(2) {
+		t.Fatalf("member_id 未更新: %#v", d["member_id"])
+	}
+	payload := d["payload"].(map[string]any)
+	if payload["priority"] != "P0" {
+		t.Fatalf("payload 未更新: %#v", payload)
+	}
+	if v, ok := payload["note"]; !ok || v != nil {
+		t.Fatalf("payload 清空应写回 null: %#v", payload)
+	}
+
+	// 清空日期：空串落库为 NULL，且不报 400。
+	code, env = call(t, srv, "PATCH", "/api/v1/items/"+id, map[string]any{"occur_at": "", "end_at": ""}, nil)
+	if code != 200 {
+		t.Fatalf("清空日期失败: %d %#v", code, env)
+	}
+	if dataMap(t, env)["occur_at"] != nil || dataMap(t, env)["end_at"] != nil {
+		t.Fatalf("日期应被清除: %#v", dataMap(t, env))
+	}
+
+	// 改回「全家」：member_id=0。
+	code, env = call(t, srv, "PATCH", "/api/v1/items/"+id, map[string]any{"member_id": 0}, nil)
+	if code != 200 || dataMap(t, env)["member_id"] != nil {
+		t.Fatalf("member_id=0 应回到全家: %d %#v", code, env)
+	}
+
+	code, _ = call(t, srv, "PATCH", "/api/v1/items/"+id, map[string]any{"occur_at": "2026-02-30"}, nil)
+	if code != 400 {
+		t.Fatalf("非法日期应 400, got %d", code)
+	}
+	code, _ = call(t, srv, "PATCH", "/api/v1/items/"+id, map[string]any{"title": "  "}, nil)
+	if code != 400 {
+		t.Fatalf("空标题应 400, got %d", code)
+	}
+}
+
 // 首页一次聚合跨模块数据，且能识别「未来就医」。
 func TestOverviewAggregation(t *testing.T) {
 	srv, _ := newTestAPI(t, "")

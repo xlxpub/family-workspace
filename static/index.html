@@ -52,8 +52,11 @@ nav{display:flex;flex-direction:column;gap:3px;margin-top:6px}
 /* 删除：默认淡出，悬停/键盘聚焦时出现；触屏设备常显 */
 .iconbtn{border:0;background:transparent;color:var(--sub);padding:4px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;opacity:0;transition:.15s;flex:0 0 auto;line-height:0}
 .iconbtn:hover{color:var(--danger);background:#fff1f1}
+.iconbtn.edit:hover{color:var(--brand);background:var(--brand-soft)}
 .row:hover .iconbtn,.tl-item:hover .iconbtn,.cal .cell:hover .iconbtn,.iconbtn:focus-visible{opacity:1}
 @media(hover:none){.iconbtn{opacity:1}}
+/* 编辑 + 删除成组出现：编辑在左、删除在右，间距固定 */
+.acts{display:inline-flex;align-items:center;gap:2px;flex:0 0 auto}
 
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:18px}
 .card h2{margin:0 0 4px;font-size:15px}
@@ -274,7 +277,8 @@ const ICONS = {
   book:'<path d="M4 4h9a3 3 0 0 1 3 3v13a3 3 0 0 0-3-3H4z"/><path d="M20 4h-1a3 3 0 0 0-3 3v13a3 3 0 0 1 3-3h1z"/>',
   chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
-  trash:'<path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>'
+  trash:'<path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>',
+  pencil:'<path d="M4 20h4L18.5 9.5a2.83 2.83 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>'
 };
 function icon(n,s){s=s||18;return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(ICONS[n]||ICONS.grid)+'</svg>';}
 const VIEW_NAMES = {list:'列表',calendar:'日历',timeline:'时间轴',users:'用户'};
@@ -344,6 +348,8 @@ const API_BASE=(function(){
 let CSRF='';
 let aiEnabled=false, aiParsing=false, itemSaving=false;
 let draftQueue=[], draftIndex=0;
+/* 编辑态：非空时新增弹窗复用同一套 schema 表单，改为预填 + PATCH */
+let editItem=null;
 let DB={modules:[],members:[],items:[],users:[],me:null,session:null};
 
 function toast(msg,bad,action){
@@ -413,8 +419,11 @@ function mBadge(id){const m=memberById(id);if(!m)return '<span class="mbadge">�
 function kindTag(p){const k=p.kind;if(!k)return '';const cls={'吃饭':'meal','生病':'illness','就医':'visit'}[k]||'';return '<span class="tag '+cls+'">'+esc(k)+'</span>';}
 function prioTag(p){if(!p.priority)return '';return '<span class="tag '+p.priority.toLowerCase()+'">'+esc(p.priority)+'</span>';}
 function extras(it){return Object.keys(it.payload||{}).filter(k=>it.payload[k]!==''&&it.payload[k]!=null&&['kind','priority'].indexOf(k)<0).slice(0,2).map(k=>'<span class="tag">'+esc(field(k).label)+'：'+esc(it.payload[k])+'</span>').join('');}
-/* 列表 / 时间轴 / 日历共用的删除按钮：只读账号不渲染，避免看起来能点却无效 */
+/* 列表 / 时间轴 / 日历 / 首页共用的行内操作：编辑在左、删除在右。
+   只读账号两个按钮都不渲染，避免看起来能点却无效 */
+function editBtn(i){return canWrite()?'<button class="iconbtn edit" type="button" data-act="edit" data-id="'+esc(i.id)+'" title="编辑「'+esc(i.title)+'」" aria-label="编辑「'+esc(i.title)+'」">'+icon('pencil',15)+'</button>':'';}
 function delBtn(i){return canWrite()?'<button class="iconbtn" type="button" data-act="del" data-id="'+esc(i.id)+'" title="删除「'+esc(i.title)+'」" aria-label="删除「'+esc(i.title)+'」">'+icon('trash',15)+'</button>':'';}
+function rowActs(i){const e=editBtn(i),d=delBtn(i);return e||d?'<span class="acts">'+e+d+'</span>':'';}
 
 /* ============ 侧栏 ============ */
 function renderSide(){
@@ -451,7 +460,7 @@ function renderHome(){
   h+='</div>';
 
   h+='<div class="card"><h2>未来 7 天提醒</h2><p class="desc">含就医、日历、待办截止</p>';
-  h+= soon.length? soon.slice(0,7).map(i=>'<div class="row"><div class="main-c"><div class="ttl">'+esc(i.title)+'</div><div class="meta"><span class="tag soon">'+esc(i.occur_at)+'</span>'+mBadge(i.member_id)+kindTag(i.payload)+'<span class="tag">'+esc((modBy(i.module_key)||{}).name||'')+'</span></div></div>'+delBtn(i)+'</div>').join('') : '<div class="empty">近期没有安排</div>';
+  h+= soon.length? soon.slice(0,7).map(i=>'<div class="row"><div class="main-c"><div class="ttl">'+esc(i.title)+'</div><div class="meta"><span class="tag soon">'+esc(i.occur_at)+'</span>'+mBadge(i.member_id)+kindTag(i.payload)+'<span class="tag">'+esc((modBy(i.module_key)||{}).name||'')+'</span></div></div>'+rowActs(i)+'</div>').join('') : '<div class="empty">近期没有安排</div>';
   h+='</div></div>';
 
   h+='<div class="card"><h2>待办速览</h2><p class="desc">按优先级与日期排序，可直接勾选完成</p>';
@@ -464,14 +473,14 @@ function stat(n,t,cls){return '<div class="stat '+cls+'"><div class="n">'+n+'</d
 function tlItem(i){
   const k={'吃饭':'k-meal','生病':'k-illness','就医':'k-visit'}[i.payload.kind]||'';
   return '<div class="tl-item '+k+'"><div class="tl-date">'+esc(i.occur_at||'未设日期')+' · '+esc((modBy(i.module_key)||{}).name||'')+'</div>'+
-    '<div class="tl-body"><div class="ttl-row"><div class="ttl">'+esc(i.title)+'</div>'+delBtn(i)+'</div><div class="meta" style="font-size:12px;color:var(--sub);display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'+mBadge(i.member_id)+kindTag(i.payload)+prioTag(i.payload)+extras(i)+'</div></div></div>';
+    '<div class="tl-body"><div class="ttl-row"><div class="ttl">'+esc(i.title)+'</div>'+rowActs(i)+'</div><div class="meta" style="font-size:12px;color:var(--sub);display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'+mBadge(i.member_id)+kindTag(i.payload)+prioTag(i.payload)+extras(i)+'</div></div></div>';
 }
 function rowHtml(i){
   const ro=canWrite()?'':' disabled';
   return '<div class="row '+(i.status==='done'?'done':'')+'">'+
     '<input class="cbox" type="checkbox" data-act="toggle" data-id="'+i.id+'" '+(i.status==='done'?'checked':'')+ro+'>'+
     '<div class="main-c"><div class="ttl">'+esc(i.title)+'</div><div class="meta"><span class="tag">'+esc(i.occur_at||'未设日期')+'</span>'+mBadge(i.member_id)+kindTag(i.payload)+prioTag(i.payload)+extras(i)+'<span class="tag">'+esc((modBy(i.module_key)||{}).name||'')+'</span></div></div>'+
-    delBtn(i)+'</div>';
+    rowActs(i)+'</div>';
 }
 
 /* ============ 列表视图 ============ */
@@ -516,7 +525,7 @@ function renderCalendar(mod){
     const d=new Date(start); d.setDate(start.getDate()+n);
     const ds=fmt(d), dim=d.getMonth()!==m, evs=byDate[ds]||[], open=state.calOpen===ds;
     h+='<div class="cell '+(dim?'dim ':'')+(ds===TODAY?'today':'')+'" data-act="addOn" data-date="'+ds+'" data-key="'+esc(mod.key)+'"><div class="dnum"><span>'+d.getDate()+'</span></div>';
-    (open?evs:evs.slice(0,3)).forEach(i=>{const mm=memberById(i.member_id);h+='<div class="ev" data-act="calEvent" data-date="'+ds+'" style="background:'+(mm?mm.color+'18':'#eef2ff')+'"><i class="dot" style="background:'+(mm?mm.color:'#5b7cfa')+'"></i><span class="ev-t">'+esc(i.title)+'</span>'+delBtn(i)+'</div>';});
+    (open?evs:evs.slice(0,3)).forEach(i=>{const mm=memberById(i.member_id);h+='<div class="ev" data-act="calEvent" data-date="'+ds+'" style="background:'+(mm?mm.color+'18':'#eef2ff')+'"><i class="dot" style="background:'+(mm?mm.color:'#5b7cfa')+'"></i><span class="ev-t">'+esc(i.title)+'</span>'+rowActs(i)+'</div>';});
     if(evs.length>3) h+='<button type="button" class="more" data-act="calExpand" data-date="'+ds+'">'+(open?'收起':'+'+(evs.length-3)+' 条')+'</button>';
     h+='</div>';
   }
@@ -614,9 +623,10 @@ function writableModules(){
 function currentDraft(){return draftQueue[draftIndex]||null;}
 function openModal(moduleKey,date,draft){
   if(!canWrite())return;
+  editItem=null;
   if(!draft){draftQueue=[];draftIndex=0;}
   const sel=document.getElementById('modalModule'), modules=writableModules();
-  sel.required=true;
+  sel.required=true; sel.disabled=false;
   sel.innerHTML=(draft?'<option value="" disabled>请选择模块</option>':'')+modules.map(m=>'<option value="'+esc(m.key)+'">'+esc(m.name)+'</option>').join('');
   sel.value=draft?(moduleKey||''):(moduleKey||(modules[0]||{}).key||'');
   document.getElementById('modalTitle').textContent=draft?'确认草稿 '+(draftIndex+1)+' / '+draftQueue.length:'新增条目';
@@ -629,24 +639,52 @@ function openModal(moduleKey,date,draft){
   renderFormFields(sel.value,date,draft);
   document.getElementById('mask').classList.remove('hidden');
 }
+/* 编辑：复用新增弹窗的表单，字段由同一份 schema 生成并预填当前值。
+   条目不能跨模块移动，所以模块选择器固定为当前模块。 */
+function openEditModal(id){
+  if(!canWrite())return;
+  const it=DB.items.find(x=>String(x.id)===String(id));
+  if(!it){toast('条目不存在或已被删除',true);return;}
+  const mod=modBy(it.module_key);
+  if(!mod){toast('找不到条目所属模块',true);return;}
+  if((mod.adapter||'generic')!=='generic'||!canSee(mod.required_role)){
+    toast('「'+mod.name+'」的条目不支持在此编辑',true);return;
+  }
+  editItem=it; draftQueue=[]; draftIndex=0;
+  const sel=document.getElementById('modalModule');
+  sel.required=false; sel.disabled=true;
+  sel.innerHTML='<option value="'+esc(mod.key)+'">'+esc(mod.name)+'</option>';
+  sel.value=mod.key;
+  document.getElementById('modalTitle').textContent='编辑条目';
+  document.getElementById('draftQuestions').textContent='';
+  document.getElementById('draftReview').classList.add('hidden');
+  const review=document.getElementById('itemForm').elements.namedItem('__draft_reviewed');
+  review.checked=false; review.required=false;
+  document.getElementById('draftSkip').classList.add('hidden');
+  renderFormFields(mod.key,null,null);
+  document.getElementById('mask').classList.remove('hidden');
+  setTimeout(()=>{const t=document.getElementById('formFields').querySelector('input,textarea,select');if(t)t.focus();},50);
+}
 function renderFormFields(key,date,draft){
   const mod=modBy(key)||{};
   const fs=(mod.rawSchema&&mod.rawSchema.length)
     ? mod.rawSchema.map(f=>({k:f.key,label:f.label,type:f.type,options:f.options||[],core:f.core,required:f.required}))
     : CORE.map(k=>field(k));
+  const item=draft?draft.item:editItem;
+  const editing=!!editItem;
   document.getElementById('formFields').innerHTML=fs.map(f=>{
     let ctrl='';
     const name=esc(f.k), required=f.required||f.k==='title'?' required':'';
     if(f.type==='member') ctrl='<select name="'+name+'"'+required+'><option value="">全家</option>'+DB.members.map(m=>'<option value="'+m.id+'">'+esc(m.name)+'</option>').join('')+'</select>';
     else if(f.type==='textarea') ctrl='<textarea name="'+name+'"'+required+' placeholder="可选"></textarea>';
     else if(f.type==='select') ctrl='<select name="'+name+'"'+required+'><option value="">请选择</option>'+(f.options||[]).map(o=>'<option value="'+esc(o)+'">'+esc(o)+'</option>').join('')+'</select>';
-    else if(f.type==='date') ctrl='<input type="date" name="'+name+'" value="'+esc(draft?'':(date||TODAY))+'"'+required+'>';
+    else if(f.type==='date') ctrl='<input type="date" name="'+name+'" value="'+esc(item?'':(date||TODAY))+'"'+required+'>';
     else if(f.type==='number') ctrl='<input type="number" step="any" name="'+name+'"'+required+' placeholder="可选">';
     else ctrl='<input type="text" name="'+name+'"'+required+'>';
     return '<label class="f '+(f.type==='textarea'?'full':'')+'">'+esc(f.label)+ctrl+'</label>';
-  }).join('')+(draft?'<label class="f">结束日期<input type="date" name="__draft_end_at"></label><label class="f">状态<select name="__draft_status"><option value="open">待办</option><option value="done">完成</option><option value="cancelled">取消</option></select></label>':'');
-  if(draft){
-    const form=document.getElementById('itemForm'), item=draft.item;
+  }).join('')+((draft||editing)?'<label class="f">结束日期<input type="date" name="__draft_end_at"></label><label class="f">状态<select name="__draft_status"><option value="open">待办</option><option value="done">完成</option><option value="cancelled">取消</option></select></label>':'');
+  if(item){
+    const form=document.getElementById('itemForm');
     fs.forEach(f=>{
       const ctrl=form.elements.namedItem(f.k); if(!ctrl)return;
       const value=f.core?item[f.k]:(item.payload||{})[f.k];
@@ -655,7 +693,7 @@ function renderFormFields(key,date,draft){
     form.elements.namedItem('__draft_end_at').value=item.end_at||'';
     form.elements.namedItem('__draft_status').value=item.status||'open';
     const member=form.elements.namedItem('member_id');
-    if(member&&draft.member_scope==='unknown'){
+    if(member&&draft&&draft.member_scope==='unknown'){
       const option=document.createElement('option');option.value='__unknown__';option.textContent='请选择成员或全家';option.disabled=true;
       member.prepend(option);member.value='__unknown__';
     }
@@ -663,13 +701,64 @@ function renderFormFields(key,date,draft){
 }
 function closeModal(){
   if(itemSaving)return;
-  document.getElementById('mask').classList.add('hidden');draftQueue=[];draftIndex=0;
+  document.getElementById('mask').classList.add('hidden');
+  draftQueue=[];draftIndex=0;editItem=null;
 }
 function nextDraft(){
   draftIndex++;
   const draft=currentDraft();
   if(draft)openModal(draft.item.module_key,null,draft);
   else{closeModal();toast('草稿处理完成');}
+}
+/* 保存编辑：PATCH 只提交真正变化的字段，未改的字段不动。
+   payload 里被清空的字段显式送 null，否则后端按合并语义会保留旧值。 */
+async function saveEdit(form){
+  const it=editItem, mod=modBy(it.module_key);
+  if(!it||!mod)return;
+  const fd=new FormData(form);
+  const memberEl=form.elements.namedItem('member_id');
+  const member=memberEl?memberEl.value:'';
+  if(member==='__unknown__'){toast('请选择归属成员，或明确选择全家',true);return;}
+  const title=(fd.get('title')||'').trim();
+  if(!title){toast('标题不能为空',true);return;}
+  const same=(a,b)=>String(a==null?'':a)===String(b==null?'':b);
+  const patch={};
+  if(title!==it.title)patch.title=title;
+  const occur=(fd.get('occur_at')||'').trim();
+  if(!same(occur,it.occur_at))patch.occur_at=occur;      // 空串 = 清除日期
+  const end=(fd.get('__draft_end_at')||'').trim();
+  if(!same(end,it.end_at))patch.end_at=end;
+  const status=fd.get('__draft_status')||it.status||'open';
+  if(status!==it.status)patch.status=status;
+  const memberID=member?Number(member):null;
+  if(!same(memberID,it.member_id))patch.member_id=memberID===null?0:memberID;  // 0 = 全家
+  const payload={};
+  ((mod.rawSchema)||[]).filter(f=>!f.core).forEach(f=>{
+    const raw=fd.get(f.key);
+    const v=(raw==null?'':String(raw)).trim();
+    const old=(it.payload||{})[f.key];
+    if(v===''){ if(old!=null&&old!=='')payload[f.key]=null; return; }
+    const next=f.type==='number'?Number(v):v;
+    if(!same(next,old))payload[f.key]=next;
+  });
+  if(Object.keys(payload).length)patch.payload=payload;
+  if(!Object.keys(patch).length){closeModal();toast('没有改动');return;}
+  itemSaving=true;
+  const fields=Array.from(form.elements);
+  fields.forEach(el=>el.disabled=true);
+  let saved=false;
+  try{await api('/items/'+encodeURIComponent(it.id),{method:'PATCH',body:patch});saved=true;}
+  catch(error){toast('保存失败：'+error.message,true);}
+  finally{
+    itemSaving=false;
+    fields.forEach(el=>el.disabled=false);
+    const sel=document.getElementById('modalModule');
+    if(sel)sel.disabled=!!editItem;   // 编辑时模块不可改
+  }
+  if(!saved)return;
+  closeModal();
+  try{await loadAll();}catch(error){toast('已保存，但刷新失败：'+error.message,true);return;}
+  toast('已保存「'+title+'」');
 }
 function openAI(){
   if(!canWrite()||!aiEnabled)return;
@@ -726,6 +815,7 @@ document.addEventListener('click',async e=>{
   else if(a==='calExpand'||a==='calEvent'){ const ds=t.dataset.date; state.calOpen=state.calOpen===ds?'':ds; render(); }
   else if(a==='add') openModal(t.dataset.key||(state.view!=='home'&&state.view!=='__modules__'?state.view:null),null);
   else if(a==='addOn') openModal(t.dataset.key,t.dataset.date);
+  else if(a==='edit') openEditModal(t.dataset.id);
   else if(a==='closeModal') closeModal();
   else if(a==='aiOpen') openAI();
   else if(a==='aiClose'){if(!aiParsing)document.getElementById('aiMask').classList.add('hidden');}
@@ -810,6 +900,7 @@ document.addEventListener('submit',async e=>{
   if(e.target.id==='aiForm'){await parseAI(e.target);return;}
   if(e.target.id==='itemForm'){
     if(itemSaving||!e.target.reportValidity())return;
+    if(editItem){await saveEdit(e.target);return;}
     const fd=new FormData(e.target), mk=fd.get('module_key'), draft=currentDraft();
     const mod=modBy(mk); if(!mod)return;
     const member=e.target.elements.namedItem('member_id').value;

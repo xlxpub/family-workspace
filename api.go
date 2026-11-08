@@ -536,8 +536,13 @@ func (a *API) itemDetail(w http.ResponseWriter, r *http.Request) {
 			badRequest(w, "title 不能为空")
 			return
 		}
-		if p.OccurAt != nil && parseDate(*p.OccurAt) != nil {
+		// 空串表示「不设日期」，交给 UpdateItem 落成 NULL；编辑表单清空日期时走这里。
+		if p.OccurAt != nil && *p.OccurAt != "" && parseDate(*p.OccurAt) != nil {
 			badRequest(w, "occur_at 需为 YYYY-MM-DD")
+			return
+		}
+		if p.EndAt != nil && *p.EndAt != "" && parseDate(*p.EndAt) != nil {
+			badRequest(w, "end_at 需为 YYYY-MM-DD")
 			return
 		}
 		if p.Status != nil && !validStatus[*p.Status] {
