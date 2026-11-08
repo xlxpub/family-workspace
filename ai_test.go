@@ -217,6 +217,76 @@ func TestAIErrorDiagnostics(t *testing.T) {
 	}
 }
 
+// 线上真实故障：模型把日期写成 JSON 数字，解码报 type mismatch。
+// 这个用例同时锁住三件事：诊断能指出字段、日志会打印模型原始输出、密钥不外泄。
+func TestAIRawResponseLogging(t *testing.T) {
+	const content = `{"drafts":[{"item":{"module_key":"calendar","title":"体检","occur_at":20261108},"member_scope":"unknown","questions":[]}],"questions":[]}`
+
+	newClient := func(t *testing.T) *AIClient {
+		t.Helper()
+		ai, err := newAIClient("http://localhost", "fake-secret", "test-model")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ai.client.Transport = aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			body, err := json.Marshal(map[string]any{"choices": []any{map[string]any{
+				"message": map[string]string{"content": content}, "finish_reason": "stop",
+			}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(body))), Header: make(http.Header)}, nil
+		})
+		return ai
+	}
+	run := func(t *testing.T) (error, string) {
+		t.Helper()
+		var logs strings.Builder
+		previous := log.Writer()
+		log.SetOutput(&logs)
+		defer log.SetOutput(previous)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := newClient(t).extract(ctx, map[string]any{"text": "今天体检"})
+		if err == nil {
+			t.Fatal("期望解码失败")
+		}
+		return err, logs.String()
+	}
+
+	t.Run("默认打印模型原始输出", func(t *testing.T) {
+		err, logs := run(t)
+		if !strings.Contains(err.Error(), "drafts.item.occur_at") || !strings.Contains(err.Error(), "got number") {
+			t.Fatalf("诊断未指出字段与类型: %v", err)
+		}
+		if !strings.Contains(logs, "[AI] raw content") || !strings.Contains(logs, `"occur_at":20261108`) {
+			t.Fatalf("未打印模型原始输出: %s", logs)
+		}
+		if strings.Contains(logs, "fake-secret") {
+			t.Fatalf("日志泄露密钥: %s", logs)
+		}
+		if strings.Count(strings.TrimRight(logs, "\n"), "\n") != 0 {
+			t.Fatalf("原始输出应压成单行: %q", logs)
+		}
+	})
+
+	t.Run("FW_AI_LOG_RAW=0 关闭打印", func(t *testing.T) {
+		t.Setenv("FW_AI_LOG_RAW", "0")
+		_, logs := run(t)
+		if strings.Contains(logs, "[AI] raw") {
+			t.Fatalf("关闭后仍打印: %s", logs)
+		}
+	})
+
+	t.Run("按上限截断", func(t *testing.T) {
+		t.Setenv("FW_AI_LOG_RAW", "20")
+		_, logs := run(t)
+		if !strings.Contains(logs, "(truncated)") || strings.Contains(logs, `"occur_at":20261108`) {
+			t.Fatalf("未按上限截断: %s", logs)
+		}
+	})
+}
+
 func TestAIUpstreamErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

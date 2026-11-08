@@ -25,6 +25,8 @@ services:
       FW_AI_BASE_URL: ${FW_AI_BASE_URL:-https://api.deepseek.com}
       FW_AI_MODEL: ${FW_AI_MODEL:-deepseek-chat}
       FW_AI_API_KEY: ${FW_AI_API_KEY:-}
+      # 解析失败时写入日志的模型原始输出字符数；0 关闭，默认 1500
+      FW_AI_LOG_RAW: ${FW_AI_LOG_RAW:-1500}
     # 健康检查已在 Dockerfile 中定义，此处自动继承；docker compose ps 可看状态
 
 volumes:

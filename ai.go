@@ -10,7 +10,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -21,6 +23,8 @@ type AIClient struct {
 	key      string
 	model    string
 	client   *http.Client
+	// rawLog 是解析失败时允许写入日志的模型原始输出字符数上限；0 表示不打印。
+	rawLog int
 }
 
 func newAIClient(baseURL, key, model string) (*AIClient, error) {
@@ -37,10 +41,61 @@ func newAIClient(baseURL, key, model string) (*AIClient, error) {
 	u.Path = strings.TrimRight(u.Path, "/") + "/chat/completions"
 	return &AIClient{
 		endpoint: u.String(), key: key, model: model,
+		rawLog: rawLogLimit(),
 		client: &http.Client{Timeout: 25 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		}},
 	}, nil
+}
+
+// 解析失败时默认把模型原始输出写进服务端日志：模型返回的形状问题光看
+// 「type mismatch at byte N」无法定位，需要看到它到底返回了什么。
+// 该内容可能包含用户原话与家庭记录，因此默认截断到 1500 字符并压成单行；
+// 设 FW_AI_LOG_RAW=0 可彻底关闭，设成其它非负整数可改上限。
+const defaultRawLogRunes = 1500
+
+func rawLogLimit() int {
+	v := strings.TrimSpace(os.Getenv("FW_AI_LOG_RAW"))
+	switch strings.ToLower(v) {
+	case "":
+		return defaultRawLogRunes
+	case "0", "off", "false":
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		log.Printf("[AI] FW_AI_LOG_RAW=%q 无法识别，按默认 %d 字符处理", v, defaultRawLogRunes)
+		return defaultRawLogRunes
+	}
+	return n
+}
+
+// logRaw 打印模型原始输出。先剔除密钥、再把控制字符压成单行、最后按字符数截断，
+// 保证一条日志只占一行，也不会因为超长内容刷爆 journald。
+func (c *AIClient) logRaw(stage string, raw []byte) {
+	if c == nil || c.rawLog <= 0 || len(raw) == 0 {
+		return
+	}
+	text := strings.ToValidUTF8(string(raw), "\uFFFD")
+	if c.key != "" {
+		text = strings.ReplaceAll(text, c.key, "[REDACTED]")
+	}
+	text = strings.Map(func(r rune) rune {
+		switch r {
+		case '\n', '\r', '\t':
+			return ' '
+		}
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, text)
+	text = strings.Join(strings.Fields(text), " ")
+	suffix := ""
+	if runes := []rune(text); len(runes) > c.rawLog {
+		text, suffix = string(runes[:c.rawLog]), " …(truncated)"
+	}
+	log.Printf("[AI] raw %s%s: %s", stage, suffix, text)
 }
 
 type draftQuestion struct {
@@ -108,6 +163,7 @@ func (c *AIClient) extract(ctx context.Context, input any) (parseResult, error) 
 		return parseResult{}, fmt.Errorf("read model response: %w", err)
 	}
 	if len(data) > 128<<10 {
+		c.logRaw("completion body", data)
 		return parseResult{}, errors.New("model response exceeds 128 KiB")
 	}
 	var completion struct {
@@ -119,12 +175,15 @@ func (c *AIClient) extract(ctx context.Context, input any) (parseResult, error) 
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(data, &completion); err != nil {
+		c.logRaw("completion body", data)
 		return parseResult{}, fmt.Errorf("decode completion: %s", aiJSONDiagnostic(err))
 	}
 	if len(completion.Choices) != 1 {
+		c.logRaw("completion body", data)
 		return parseResult{}, fmt.Errorf("model response has %d choices; expected 1", len(completion.Choices))
 	}
 	if reason := completion.Choices[0].FinishReason; reason != "stop" {
+		c.logRaw("completion body", data)
 		switch reason {
 		case "length", "content_filter", "tool_calls", "function_call", "":
 			return parseResult{}, fmt.Errorf("model response incomplete: finish_reason=%q", reason)
@@ -134,9 +193,11 @@ func (c *AIClient) extract(ctx context.Context, input any) (parseResult, error) 
 	}
 	var result parseResult
 	if err := strictJSON([]byte(completion.Choices[0].Message.Content), &result); err != nil {
+		c.logRaw("content", []byte(completion.Choices[0].Message.Content))
 		return parseResult{}, fmt.Errorf("decode draft JSON: %s", aiJSONDiagnostic(err))
 	}
 	if result.Drafts == nil || len(result.Drafts) > 10 || (len(result.Drafts) == 0 && len(result.Questions) == 0) {
+		c.logRaw("content", []byte(completion.Choices[0].Message.Content))
 		return parseResult{}, errors.New("模型草稿数量或格式不合法")
 	}
 	if result.Questions == nil {
@@ -184,6 +245,8 @@ func upstreamCode(body []byte) string {
 }
 
 // Decoder error strings may include model-generated values; log only structural diagnostics.
+// 字段名与 JSON 值类型来自 Go 的 decoder（结构体字段路径 / number、object 这类类型描述），
+// 不含模型生成的内容，可安全落日志；它能直接指出是哪个字段的形状不对。
 func aiJSONDiagnostic(err error) string {
 	var syntax *json.SyntaxError
 	if errors.As(err, &syntax) {
@@ -191,16 +254,33 @@ func aiJSONDiagnostic(err error) string {
 	}
 	var mismatch *json.UnmarshalTypeError
 	if errors.As(err, &mismatch) {
-		return fmt.Sprintf("JSON type mismatch at byte %d; expected %v", mismatch.Offset, mismatch.Type)
+		field := mismatch.Field
+		if field == "" {
+			field = "(root)"
+		}
+		got := mismatch.Value
+		if got == "" {
+			got = "unknown"
+		}
+		return fmt.Sprintf("JSON type mismatch at byte %d; field %q got %s, expected %v",
+			mismatch.Offset, field, got, mismatch.Type)
 	}
 	if errors.Is(err, io.EOF) {
 		return "empty JSON content"
 	}
-	if strings.HasPrefix(err.Error(), "json: unknown field ") {
+	const unknownPrefix = "json: unknown field "
+	if strings.HasPrefix(err.Error(), unknownPrefix) {
+		name := strings.Trim(strings.TrimPrefix(err.Error(), unknownPrefix), `"`)
+		if usedFieldPattern.MatchString(name) {
+			return fmt.Sprintf("unexpected JSON field %q (strict schema)", name)
+		}
 		return "unexpected JSON field (strict schema)"
 	}
 	return "invalid JSON structure or trailing content"
 }
+
+// 只接受形如 drafts[0].item.title 的字段名，避免把模型生成的任意文本带进日志。
+var usedFieldPattern = regexp.MustCompile(`^[A-Za-z0-9_.\[\]-]{1,120}$`)
 
 func strictJSON(data []byte, dst any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
