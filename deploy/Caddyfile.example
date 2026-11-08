@@ -31,3 +31,26 @@ family.example.com {
 	# 真正的限速/封禁交给 fail2ban，避免在 Caddy 里引入第三方限速插件。
 	reverse_proxy 127.0.0.1:8080
 }
+
+# ---------------------------------------------------------------
+# 备选：挂在子路径下（https://family.example.com/myfamily）
+#
+# 用域名时通常没必要加子路径，根路径最省事。确实需要时，把上面整段换成下面这段。
+# 前端 static/index.html 会按 location.pathname 推导 API_BASE，请求
+# /myfamily/api/v1/*，handle_path 剥掉前缀后后端仍收到 /api/v1/*，后端无需改动。
+#
+# family.example.com {
+# 	encode zstd gzip
+# 	header Strict-Transport-Security "max-age=31536000"
+# 	log {
+# 		output file /var/log/caddy/family.log
+# 		format json
+# 	}
+#
+# 	redir /myfamily /myfamily/ 308
+# 	handle_path /myfamily/* {
+# 		reverse_proxy 127.0.0.1:8080
+# 	}
+# 	respond 404
+# }
+

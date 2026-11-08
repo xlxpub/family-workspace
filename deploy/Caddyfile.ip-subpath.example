@@ -1,0 +1,49 @@
+# 场景：只有公网 IP，没有域名，且希望挂在子路径下（https://<IP>/myfamily）。
+#
+# 两个必须知道的限制：
+#   1. 裸 IP 拿不到公信证书 —— Let's Encrypt / ZeroSSL 只给域名签发。
+#      这里用 Caddy 内部 CA（tls internal），浏览器首次访问会有证书警告；
+#      手机/电脑需要安装一次根证书才能消掉（见文末）。
+#      有域名时请改用 deploy/Caddyfile.example，让 Caddy 自动申请公信证书。
+#   2. 前端页面在 /myfamily/ 下，API 请求也会带 /myfamily 前缀（static/index.html 已按
+#      页面路径推导 API_BASE）。handle_path 会把前缀剥掉，后端仍然收到 /api/v1/*。
+#
+# 前置：
+#   - 应用只监听回环：.env 设 FW_BIND=127.0.0.1 并重启容器
+#   - .env 设 FW_COOKIE_SECURE=1（HTTPS 下必须，否则会话 Cookie 不发送，登录后一直跳回登录框）
+#   - 安全组 / firewalld 放行 80 与 443，8080 不放行
+#
+# 用法：
+#   sudo cp deploy/Caddyfile.ip-subpath.example /etc/caddy/Caddyfile
+#   sudo sed -i 's/43\.167\.213\.28/你的公网IP/' /etc/caddy/Caddyfile
+#   sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+
+https://43.167.213.28 {
+	# 裸 IP 只能用内部 CA 自签证书；有域名时把本行删掉换成部署域名
+	tls internal
+
+	encode zstd gzip
+
+	# /myfamily 少写尾斜杠时补上，否则匹配不到下面的 /* 规则
+	redir /myfamily /myfamily/ 308
+
+	# handle_path 剥掉 /myfamily 前缀：
+	#   /myfamily/           -> /
+	#   /myfamily/api/v1/xx  -> /api/v1/xx
+	handle_path /myfamily/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	# 其余路径一律 404，不暴露服务存在
+	respond 404
+}
+
+# 内部 CA 根证书位置（安装到手机/电脑后警告消失）：
+#   /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt
+#
+# iOS：AirDrop/邮件发送该文件 → 设置 → 已下载描述文件 → 安装
+#      再进 设置 → 通用 → 关于本机 → 证书信任设置 → 打开对该证书的完全信任
+# Android：设置 → 安全 → 加密与凭据 → 安装证书 → CA 证书
+# macOS：钥匙串访问 → 系统 → 导入 → 设为「始终信任」
+# Chrome 桌面版读系统证书库；Firefox 需单独导入，或把
+#   security.enterprise_roots.enabled 设为 true 后重启

@@ -335,7 +335,12 @@ function seed(){
   };
 }
 /* ===== 数据层：直连 Go 后端（设计文档 8.6 的替换点） ===== */
-const API_BASE='/api/v1';
+/* 支持子路径部署：页面在 /myfamily/ 时 API 为 /myfamily/api/v1，
+   根路径部署时仍是 /api/v1，行为不变。 */
+const API_BASE=(function(){
+  var p=location.pathname;
+  return p.slice(0,p.lastIndexOf('/')+1)+'api/v1';
+})();
 let CSRF='';
 let aiEnabled=false, aiParsing=false, itemSaving=false;
 let draftQueue=[], draftIndex=0;
