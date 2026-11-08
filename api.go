@@ -67,6 +67,7 @@ type API struct {
 	password     string // FW_AUTH_PASSWORD：初始管理员密码 + 脚本 API Token
 	cookieSecure bool   // FW_COOKIE_SECURE=1（HTTPS 反代时开启）
 	indexHTML    []byte
+	ai           *AIClient
 }
 
 func (a *API) Handler() http.Handler {
@@ -77,6 +78,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/modules/", a.moduleDetail)
 	mux.HandleFunc("/api/v1/members", a.members)
 	mux.HandleFunc("/api/v1/items", a.items)
+	mux.HandleFunc("/api/v1/items/parse", a.parseItems)
 	mux.HandleFunc("/api/v1/items/", a.itemDetail)
 	mux.HandleFunc("/api/v1/overview", a.overview)
 	mux.HandleFunc("/api/v1/admin/backup", a.backup)
@@ -143,6 +145,7 @@ func (a *API) bootstrap(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]any{
 		"modules": mods, "members": members, "server_time": nowStr(),
 		"current_user": currentUser(r), "csrf_token": csrfFrom(r),
+		"ai_enabled": a.ai != nil && currentUser(r).Username != "__setup__",
 	})
 }
 
@@ -277,7 +280,7 @@ func (a *API) createModule(w http.ResponseWriter, r *http.Request) {
 	m := Module{
 		Key: req.Key, Name: strings.TrimSpace(req.Name), Icon: req.Icon,
 		ViewType: req.ViewType, Desc: req.Desc,
-		Schema: append(coreSchema(), req.Schema...),
+		Schema:  append(coreSchema(), req.Schema...),
 		Adapter: "generic", RequiredRole: req.RequiredRole,
 		SortOrder: 100 + len(existing), Enabled: true, Builtin: false,
 	}
@@ -411,6 +414,27 @@ func (a *API) createItem(w http.ResponseWriter, r *http.Request) {
 	if !m.Enabled {
 		badRequest(w, "该模块已停用")
 		return
+	}
+	if !a.requireRole(w, r, m.RequiredRole) {
+		return
+	}
+	if req.MemberID != nil {
+		members, err := a.store.ListMembers(r.Context())
+		if err != nil {
+			failErr(w, err)
+			return
+		}
+		exists := false
+		for _, member := range members {
+			if member.ID == *req.MemberID {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			badRequest(w, "member_id 不存在")
+			return
+		}
 	}
 	// adapter != generic 的模块（如 users）走独立表，不允许写进 items。
 	if m.Adapter != "generic" {

@@ -129,7 +129,8 @@ label.f textarea{resize:vertical;min-height:64px}
 
 /* ---------- 弹窗 ---------- */
 .mask{position:fixed;inset:0;background:rgba(20,26,45,.4);display:grid;place-items:center;z-index:50;padding:20px}
-.mask.hidden{display:none}
+.mask.hidden,.btn.hidden,label.f.hidden{display:none}
+label.f input[type="checkbox"]{width:auto;margin-right:8px}
 .modal{background:#fff;border-radius:16px;width:min(480px,100%);max-height:88vh;overflow:auto;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
 .modal h3{margin:0 0 4px;font-size:17px}
 .modal .desc{color:var(--sub);font-size:12px;margin-bottom:18px}
@@ -187,6 +188,7 @@ label.f textarea{resize:vertical;min-height:64px}
       <div><h1 id="viewTitle">今日概览</h1><div class="sub" id="viewSub"></div></div>
       <div class="spacer"></div>
       <span class="tag" style="background:#ecfdf5;color:#059669">● 在线 · SQLite</span>
+      <button class="btn hidden" id="aiAdd" data-act="aiOpen">一句话记录</button>
       <button class="btn primary" id="globalAdd" data-act="add">＋ 新增条目</button>
     </div>
     <div id="view"></div>
@@ -212,6 +214,22 @@ label.f textarea{resize:vertical;min-height:64px}
   </div>
 </div>
 
+<div class="mask hidden" id="aiMask">
+  <div class="modal">
+    <h3>一句话记录</h3>
+    <div class="desc">原话和必要的成员、模块信息会发给已配置的外部模型。只生成草稿，逐条确认后才保存。</div>
+    <form id="aiForm">
+      <label class="f full">目标模块<select id="aiModule" name="module_key"></select></label>
+      <label class="f full">记录内容<textarea name="text" required maxlength="2000" placeholder="例如：爸爸今天要去体检，妈妈明天交电费"></textarea></label>
+      <div id="aiError" role="status" style="color:#dc2626;white-space:pre-wrap"></div>
+      <div class="foot">
+        <button type="button" class="btn" data-act="aiClose">取消</button>
+        <button type="submit" class="btn primary">解析草稿</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="mask hidden" id="mask">
   <div class="modal">
     <h3 id="modalTitle">新增条目</h3>
@@ -223,8 +241,11 @@ label.f textarea{resize:vertical;min-height:64px}
         </label>
         <div id="formFields" class="form-grid full"></div>
       </div>
+      <div id="draftQuestions" style="white-space:pre-wrap"></div>
+      <label class="f hidden" id="draftReview"><span><input type="checkbox" name="__draft_reviewed"> 我已检查以上待确认问题并修正草稿</span></label>
       <div class="foot">
         <button type="button" class="btn" data-act="closeModal">取消</button>
+        <button type="button" class="btn hidden" id="draftSkip" data-act="draftSkip">跳过此条</button>
         <button type="submit" class="btn primary">保存</button>
       </div>
     </form>
@@ -305,6 +326,8 @@ function seed(){
 /* ===== 数据层：直连 Go 后端（设计文档 8.6 的替换点） ===== */
 const API_BASE='/api/v1';
 let CSRF='';
+let aiEnabled=false, aiParsing=false, itemSaving=false;
+let draftQueue=[], draftIndex=0;
 let DB={modules:[],members:[],items:[],users:[],me:null,session:null};
 
 function toast(msg,bad){
@@ -337,6 +360,7 @@ function modShape(m){
 async function loadAll(){
   const b=await api('/bootstrap');
   DB.me=b.current_user; DB.session=b.current_user.id;
+  aiEnabled=!!b.ai_enabled;
   if(b.csrf_token) CSRF=b.csrf_token;
   DB.members=b.members||[];
   DB.modules=(b.modules||[]).map(modShape);
@@ -551,37 +575,98 @@ function render(){
   document.getElementById('viewTitle').textContent=title;
   document.getElementById('viewSub').textContent=sub;
   document.getElementById('view').innerHTML=h;
+  document.getElementById('aiAdd').classList.toggle('hidden',!canWrite()||!aiEnabled);
   document.getElementById('globalAdd').style.display =
     (canWrite() && state.view!=='users' && state.view!=='__modules__')?'':'none';
 }
 function navigate(k){ state.view=k; state.filter='open'; state.kind='全部'; render(); }
 
 /* ============ 弹窗：由 schema_json 生成表单 ============ */
-function openModal(moduleKey,date){
+function writableModules(){
+  return DB.modules.filter(m=>m.enabled&&(m.adapter||'generic')==='generic'&&canSee(m.required_role));
+}
+function currentDraft(){return draftQueue[draftIndex]||null;}
+function openModal(moduleKey,date,draft){
   if(!canWrite())return;
-  const sel=document.getElementById('modalModule');
-  sel.innerHTML=DB.modules.filter(m=>m.enabled&&(m.adapter||'generic')==='generic'&&canSee(m.required_role)).map(m=>'<option value="'+esc(m.key)+'">'+esc(m.name)+'</option>').join('');
-  sel.value=moduleKey||DB.modules[0].key;
-  renderFormFields(sel.value,date);
+  if(!draft){draftQueue=[];draftIndex=0;}
+  const sel=document.getElementById('modalModule'), modules=writableModules();
+  sel.required=true;
+  sel.innerHTML=(draft?'<option value="" disabled>请选择模块</option>':'')+modules.map(m=>'<option value="'+esc(m.key)+'">'+esc(m.name)+'</option>').join('');
+  sel.value=draft?(moduleKey||''):(moduleKey||(modules[0]||{}).key||'');
+  document.getElementById('modalTitle').textContent=draft?'确认草稿 '+(draftIndex+1)+' / '+draftQueue.length:'新增条目';
+  const questions=draft?(draft.questions||[]):[];
+  document.getElementById('draftQuestions').textContent=questions.map(q=>'待确认：'+q.message).join('\n');
+  document.getElementById('draftReview').classList.toggle('hidden',!questions.length);
+  const review=document.getElementById('itemForm').elements.namedItem('__draft_reviewed');
+  review.checked=false; review.required=!!questions.length;
+  document.getElementById('draftSkip').classList.toggle('hidden',!draft);
+  renderFormFields(sel.value,date,draft);
   document.getElementById('mask').classList.remove('hidden');
 }
-function renderFormFields(key,date){
+function renderFormFields(key,date,draft){
   const mod=modBy(key)||{};
   const fs=(mod.rawSchema&&mod.rawSchema.length)
     ? mod.rawSchema.map(f=>({k:f.key,label:f.label,type:f.type,options:f.options||[],core:f.core,required:f.required}))
-    : CORE.concat((mod.schema||[]).filter(k=>CORE.indexOf(k)<0)).map(k=>field(k));
+    : CORE.map(k=>field(k));
   document.getElementById('formFields').innerHTML=fs.map(f=>{
     let ctrl='';
-    if(f.type==='member') ctrl='<select name="'+f.k+'"><option value="">全家</option>'+DB.members.map(m=>'<option value="'+m.id+'">'+esc(m.name)+'</option>').join('')+'</select>';
-    else if(f.type==='textarea') ctrl='<textarea name="'+f.k+'" placeholder="可选"></textarea>';
-    else if(f.type==='select') ctrl='<select name="'+f.k+'"><option value="">请选择</option>'+(f.options||[]).map(o=>'<option value="'+o+'">'+o+'</option>').join('')+'</select>';
-    else if(f.type==='date') ctrl='<input type="date" name="'+f.k+'" value="'+(date||TODAY)+'" required>';
-    else if(f.type==='number') ctrl='<input type="number" name="'+f.k+'" placeholder="可选">';
-    else ctrl='<input type="text" name="'+f.k+'" '+(f.required||f.core?'required':'placeholder="可选"')+'>';
+    const name=esc(f.k), required=f.required||f.k==='title'?' required':'';
+    if(f.type==='member') ctrl='<select name="'+name+'"'+required+'><option value="">全家</option>'+DB.members.map(m=>'<option value="'+m.id+'">'+esc(m.name)+'</option>').join('')+'</select>';
+    else if(f.type==='textarea') ctrl='<textarea name="'+name+'"'+required+' placeholder="可选"></textarea>';
+    else if(f.type==='select') ctrl='<select name="'+name+'"'+required+'><option value="">请选择</option>'+(f.options||[]).map(o=>'<option value="'+esc(o)+'">'+esc(o)+'</option>').join('')+'</select>';
+    else if(f.type==='date') ctrl='<input type="date" name="'+name+'" value="'+esc(draft?'':(date||TODAY))+'"'+required+'>';
+    else if(f.type==='number') ctrl='<input type="number" step="any" name="'+name+'"'+required+' placeholder="可选">';
+    else ctrl='<input type="text" name="'+name+'"'+required+'>';
     return '<label class="f '+(f.type==='textarea'?'full':'')+'">'+esc(f.label)+ctrl+'</label>';
-  }).join('');
+  }).join('')+(draft?'<label class="f">结束日期<input type="date" name="__draft_end_at"></label><label class="f">状态<select name="__draft_status"><option value="open">待办</option><option value="done">完成</option><option value="cancelled">取消</option></select></label>':'');
+  if(draft){
+    const form=document.getElementById('itemForm'), item=draft.item;
+    fs.forEach(f=>{
+      const ctrl=form.elements.namedItem(f.k); if(!ctrl)return;
+      const value=f.core?item[f.k]:(item.payload||{})[f.k];
+      ctrl.value=value==null?'':String(value);
+    });
+    form.elements.namedItem('__draft_end_at').value=item.end_at||'';
+    form.elements.namedItem('__draft_status').value=item.status||'open';
+    const member=form.elements.namedItem('member_id');
+    if(member&&draft.member_scope==='unknown'){
+      const option=document.createElement('option');option.value='__unknown__';option.textContent='请选择成员或全家';option.disabled=true;
+      member.prepend(option);member.value='__unknown__';
+    }
+  }
 }
-function closeModal(){document.getElementById('mask').classList.add('hidden');}
+function closeModal(){
+  if(itemSaving)return;
+  document.getElementById('mask').classList.add('hidden');draftQueue=[];draftIndex=0;
+}
+function nextDraft(){
+  draftIndex++;
+  const draft=currentDraft();
+  if(draft)openModal(draft.item.module_key,null,draft);
+  else{closeModal();toast('草稿处理完成');}
+}
+function openAI(){
+  if(!canWrite()||!aiEnabled)return;
+  const sel=document.getElementById('aiModule');
+  sel.innerHTML='<option value="">自动选择</option>'+writableModules().map(m=>'<option value="'+esc(m.key)+'">'+esc(m.name)+'</option>').join('');
+  sel.value=writableModules().some(m=>m.key===state.view)?state.view:'';
+  document.getElementById('aiError').textContent='';
+  document.getElementById('aiMask').classList.remove('hidden');
+}
+async function parseAI(form){
+  if(aiParsing)return;
+  const fd=new FormData(form), error=document.getElementById('aiError');
+  aiParsing=true;Array.from(form.elements).forEach(el=>el.disabled=true);error.textContent='正在解析…';
+  try{
+    const result=await api('/items/parse',{method:'POST',body:{text:fd.get('text'),module_key:fd.get('module_key')}});
+    if(!result.drafts.length){error.textContent=(result.questions||[]).join('\n')||'没有识别到记录，请补充内容';return;}
+    draftQueue=result.drafts;draftIndex=0;
+    (result.questions||[]).forEach(message=>draftQueue[0].questions.push({field:'',message:message}));
+    document.getElementById('aiMask').classList.add('hidden');
+    openModal(currentDraft().item.module_key,null,currentDraft());
+  }catch(e){error.textContent=e.message;}
+  finally{aiParsing=false;Array.from(form.elements).forEach(el=>el.disabled=false);}
+}
 
 /* ============ 登录（Session Cookie + CSRF） ============ */
 async function doLogin(username,password){
@@ -615,6 +700,9 @@ document.addEventListener('click',async e=>{
   else if(a==='add') openModal(t.dataset.key||(state.view!=='home'&&state.view!=='__modules__'?state.view:null),null);
   else if(a==='addOn') openModal(t.dataset.key,t.dataset.date);
   else if(a==='closeModal') closeModal();
+  else if(a==='aiOpen') openAI();
+  else if(a==='aiClose'){if(!aiParsing)document.getElementById('aiMask').classList.add('hidden');}
+  else if(a==='draftSkip'){if(!itemSaving)nextDraft();}
   else if(a==='del'){
     if(!canWrite())return;
     const id=t.dataset.id, old=DB.items.slice();
@@ -647,7 +735,22 @@ document.addEventListener('click',async e=>{
 });
 document.addEventListener('change',async e=>{
   const t=e.target;
-  if(t.id==='modalModule') renderFormFields(t.value,null);
+  if(t.id==='modalModule'){
+    const draft=currentDraft();
+    if(draft){
+      const fd=new FormData(document.getElementById('itemForm')), old=draft.item;
+      const member=document.getElementById('itemForm').elements.namedItem('member_id').value;
+      draft.member_scope=member==='__unknown__'?'unknown':member?'matched':'family';
+      draft.item={module_key:t.value,title:fd.get('title')||'',occur_at:fd.get('occur_at')||null,end_at:fd.get('__draft_end_at')||null,
+        member_id:member&&member!=='__unknown__'?Number(member):null,status:fd.get('__draft_status')||'open',payload:{}};
+      ((modBy(t.value)||{}).rawSchema||[]).filter(f=>!f.core).forEach(f=>{
+        if(Object.prototype.hasOwnProperty.call(old.payload||{},f.key)&&fd.has(f.key)){
+          const value=fd.get(f.key);if(value!=='')draft.item.payload[f.key]=f.type==='number'?Number(value):value;
+        }
+      });
+      renderFormFields(t.value,null,draft);
+    }else renderFormFields(t.value,null);
+  }
   else if(t.dataset.act==='toggle'){
     if(!canWrite())return;
     const i=DB.items.find(x=>x.id===t.dataset.id);
@@ -664,18 +767,32 @@ document.addEventListener('submit',async e=>{
     await doLogin((fd.get('username')||'').trim(),fd.get('password')||'');
     return;
   }
+  if(e.target.id==='aiForm'){await parseAI(e.target);return;}
   if(e.target.id==='itemForm'){
-    const fd=new FormData(e.target), mk=fd.get('module_key');
+    if(itemSaving||!e.target.reportValidity())return;
+    const fd=new FormData(e.target), mk=fd.get('module_key'), draft=currentDraft();
     const mod=modBy(mk); if(!mod)return;
-    const item={module_key:mk,member_id:null,title:'',occur_at:TODAY,status:'open',payload:{}};
-    CORE.concat((mod.schema||[]).filter(k=>CORE.indexOf(k)<0)).forEach(k=>{
-      const v=(fd.get(k)||'').trim();
-      if(CORE.indexOf(k)>=0){ if(k==='member_id') item.member_id=v?Number(v):null; else if(v) item[k]=v; }
-      else if(v) item.payload[k]=v;
+    const member=e.target.elements.namedItem('member_id').value;
+    if(member==='__unknown__'){toast('请选择归属成员，或明确选择全家',true);return;}
+    const item={module_key:mk,member_id:member?Number(member):null,
+      title:(fd.get('title')||'').trim(),occur_at:fd.get('occur_at')||null,
+      status:fd.get('__draft_status')||'open',payload:{}};
+    if(draft)item.end_at=fd.get('__draft_end_at')||null;
+    (mod.rawSchema||[]).filter(f=>!f.core).forEach(f=>{
+      const v=(fd.get(f.key)||'').trim();
+      if(v!=='')item.payload[f.key]=f.type==='number'?Number(v):v;
     });
     if(!item.title)return;
-    const d=await push('/items','POST',item);
-    if(d){ closeModal(); await loadAll(); toast('已写入 SQLite：'+item.title); }
+    itemSaving=true;Array.from(e.target.elements).forEach(el=>el.disabled=true);
+    let saved=false;
+    try{await api('/items',{method:'POST',body:item});saved=true;}
+    catch(error){toast('保存失败：'+error.message,true);}
+    finally{itemSaving=false;Array.from(e.target.elements).forEach(el=>el.disabled=false);}
+    if(saved){
+      if(draft)nextDraft();else closeModal();
+      try{await loadAll();}catch(error){toast('已保存，但刷新失败：'+error.message,true);}
+    }
+    return;
   }
   if(e.target.id==='moduleForm'){
     const fd=new FormData(e.target);

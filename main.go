@@ -54,7 +54,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("读取内嵌前端失败: %v", err)
 	}
-	api := &API{store: st, password: password, cookieSecure: cookieSecure, indexHTML: html}
+	ai, err := newAIClient(env("FW_AI_BASE_URL", "https://api.deepseek.com"), os.Getenv("FW_AI_API_KEY"), env("FW_AI_MODEL", "deepseek-chat"))
+	if err != nil {
+		log.Fatalf("模型配置不合法: %v", err)
+	}
+	api := &API{store: st, password: password, cookieSecure: cookieSecure, indexHTML: html, ai: ai}
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -84,6 +88,12 @@ func main() {
 		addr, dbPath, password != "", cookieSecure)
 	if password == "" {
 		log.Printf("当前无用户账号，处于安装模式：POST /api/v1/auth/setup 创建首个管理员")
+	}
+	// 启动即打印实际生效的模型名：模型 ID 写错时上游只会返回 400，提前暴露可省去排查。
+	if ai != nil {
+		log.Printf("一句话记录已启用: model=%s endpoint=%s", ai.model, ai.endpoint)
+	} else {
+		log.Printf("未配置 FW_AI_API_KEY，一句话记录已关闭")
 	}
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("服务异常退出: %v", err)

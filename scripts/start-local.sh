@@ -26,7 +26,11 @@ if [ -f .env ]; then
     k="${line%%=*}"; v="${line#*=}"
     k="$(printf %s "$k" | tr -d '[:space:]')"
     case "$k" in
-      FW_AUTH_PASSWORD|FW_DB|FW_ADDR|FW_COOKIE_SECURE|TZ) ;;
+      FW_AUTH_PASSWORD|FW_DB|FW_ADDR|FW_COOKIE_SECURE|TZ|FW_AI_BASE_URL|FW_AI_MODEL|FW_AI_API_KEY) ;;
+      FW_AI_*|FW_MODEL*)
+        # 典型事故：把 FW_AI_MODEL 写成 FW_AI_MODE / FW_AI_API_KE，变量被静默丢弃后回落到默认模型
+        echo "✗ .env 中的 $k 不是有效变量名，已忽略；只认 FW_AI_BASE_URL / FW_AI_MODEL / FW_AI_API_KEY" >&2
+        continue ;;
       *) continue ;;
     esac
     case "$v" in

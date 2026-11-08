@@ -20,6 +20,9 @@ services:
       # 初始管理员口令 / 脚本 API Token；未设置时 compose 直接报错，避免裸奔启动
       FW_AUTH_PASSWORD: ${FW_AUTH_PASSWORD:?请在 .env 中设置 FW_AUTH_PASSWORD}
       FW_COOKIE_SECURE: ${FW_COOKIE_SECURE:-0}
+      FW_AI_BASE_URL: ${FW_AI_BASE_URL:-https://api.deepseek.com}
+      FW_AI_MODEL: ${FW_AI_MODEL:-deepseek-chat}
+      FW_AI_API_KEY: ${FW_AI_API_KEY:-}
     # 健康检查已在 Dockerfile 中定义，此处自动继承；docker compose ps 可看状态
 
 volumes:
