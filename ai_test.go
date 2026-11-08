@@ -69,6 +69,13 @@ func TestAIParsePreviewAndCreate(t *testing.T) {
 		if strings.Contains(body.Messages[1].Content, "password") || strings.Contains(body.Messages[1].Content, "created_at") {
 			t.Error("unnecessary private data in model context")
 		}
+		// 系统提示词要带上本次真实枚举值，避免模型把 module_key 置空或向用户索要 reference_date。
+		system := body.Messages[0].Content
+		for _, want := range []string{"reference_date", "calendar（日历）", "1（爸爸）", "显式指定 module_key=calendar"} {
+			if !strings.Contains(system, want) {
+				t.Errorf("system prompt missing %q: %s", want, system)
+			}
+		}
 		anchor, _ := time.Parse(dateLayout, input.ReferenceDate)
 		aiCompletion(w, fmt.Sprintf(`{"drafts":[
 			{"item":{"module_key":"calendar","title":"体检","occur_at":%q,"member_id":1,"payload":{}},"member_scope":"matched","questions":[]},
