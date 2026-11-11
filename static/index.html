@@ -142,7 +142,7 @@ label.f textarea{resize:vertical;min-height:64px}
 
 /* ---------- 弹窗 ---------- */
 .mask{position:fixed;inset:0;background:rgba(20,26,45,.4);display:grid;place-items:center;z-index:50;padding:20px}
-.mask.hidden,.btn.hidden,label.f.hidden{display:none}
+.mask.hidden,.btn.hidden,label.f.hidden,.modal .desc.hidden{display:none}
 label.f input[type="checkbox"]{width:auto;margin-right:8px}
 .modal{background:#fff;border-radius:16px;width:min(480px,100%);max-height:88vh;overflow:auto;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
 .modal h3{margin:0 0 4px;font-size:17px}
@@ -177,6 +177,11 @@ label.f input[type="checkbox"]{width:auto;margin-right:8px}
   .main{padding:18px 16px 50px}
   .grid3,.grid2,.form-grid{grid-template-columns:1fr}
   .cal .cell{min-height:64px}
+  .mask{grid-template-columns:minmax(0,1fr);padding:12px}
+  .modal{min-width:0;max-height:calc(100dvh - 24px);padding:18px}
+  .modal .form-grid{grid-template-columns:minmax(0,1fr)}
+  .modal label.f,.modal input,.modal select,.modal textarea{min-width:0;max-width:100%}
+  .modal input,.modal select,.modal textarea{font-size:16px}
 }
 </style>
 </head>
@@ -254,8 +259,7 @@ label.f input[type="checkbox"]{width:auto;margin-right:8px}
         </label>
         <div id="formFields" class="form-grid full"></div>
       </div>
-      <div id="draftQuestions" style="white-space:pre-wrap"></div>
-      <label class="f hidden" id="draftReview"><span><input type="checkbox" name="__draft_reviewed"> 我已检查以上待确认问题并修正草稿</span></label>
+      <div class="desc hidden" id="draftDateNotice">仅保存日期，不会按具体时间定时提醒</div>
       <div class="foot">
         <button type="button" class="btn" data-act="closeModal">取消</button>
         <button type="button" class="btn hidden" id="draftSkip" data-act="draftSkip">跳过此条</button>
@@ -630,11 +634,7 @@ function openModal(moduleKey,date,draft){
   sel.innerHTML=(draft?'<option value="" disabled>请选择模块</option>':'')+modules.map(m=>'<option value="'+esc(m.key)+'">'+esc(m.name)+'</option>').join('');
   sel.value=draft?(moduleKey||''):(moduleKey||(modules[0]||{}).key||'');
   document.getElementById('modalTitle').textContent=draft?'确认草稿 '+(draftIndex+1)+' / '+draftQueue.length:'新增条目';
-  const questions=draft?(draft.questions||[]):[];
-  document.getElementById('draftQuestions').textContent=questions.map(q=>'待确认：'+q.message).join('\n');
-  document.getElementById('draftReview').classList.toggle('hidden',!questions.length);
-  const review=document.getElementById('itemForm').elements.namedItem('__draft_reviewed');
-  review.checked=false; review.required=!!questions.length;
+  document.getElementById('draftDateNotice').classList.toggle('hidden',!draft);
   document.getElementById('draftSkip').classList.toggle('hidden',!draft);
   renderFormFields(sel.value,date,draft);
   document.getElementById('mask').classList.remove('hidden');
@@ -656,10 +656,7 @@ function openEditModal(id){
   sel.innerHTML='<option value="'+esc(mod.key)+'">'+esc(mod.name)+'</option>';
   sel.value=mod.key;
   document.getElementById('modalTitle').textContent='编辑条目';
-  document.getElementById('draftQuestions').textContent='';
-  document.getElementById('draftReview').classList.add('hidden');
-  const review=document.getElementById('itemForm').elements.namedItem('__draft_reviewed');
-  review.checked=false; review.required=false;
+  document.getElementById('draftDateNotice').classList.add('hidden');
   document.getElementById('draftSkip').classList.add('hidden');
   renderFormFields(mod.key,null,null);
   document.getElementById('mask').classList.remove('hidden');
@@ -774,9 +771,8 @@ async function parseAI(form){
   aiParsing=true;Array.from(form.elements).forEach(el=>el.disabled=true);error.textContent='正在解析…';
   try{
     const result=await api('/items/parse',{method:'POST',body:{text:fd.get('text'),module_key:fd.get('module_key')}});
-    if(!result.drafts.length){error.textContent=(result.questions||[]).join('\n')||'没有识别到记录，请补充内容';return;}
+    if(!result.drafts.length){error.textContent=result.error||'没有识别到记录，请补充内容';return;}
     draftQueue=result.drafts;draftIndex=0;
-    (result.questions||[]).forEach(message=>draftQueue[0].questions.push({field:'',message:message}));
     document.getElementById('aiMask').classList.add('hidden');
     openModal(currentDraft().item.module_key,null,currentDraft());
   }catch(e){error.textContent=e.message;}

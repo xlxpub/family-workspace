@@ -28,6 +28,48 @@ func aiTestServer(t *testing.T, ai *AIClient, password string) (*httptest.Server
 	return srv, st
 }
 
+func TestAIExtractQuestionContract(t *testing.T) {
+	if strings.Contains(extractPrompt, "questions") {
+		t.Error("prompt must not request questions")
+	}
+
+	tests := []struct {
+		name    string
+		content string
+		wantErr bool
+	}{
+		{"global reason", `{"drafts":[],"error":"请补充事项"}`, false},
+		{"drafts with missing values", `{"drafts":[{"item":{"title":"开会","occur_at":"2026-11-12"},"member_scope":"family"},{"item":{"title":"待办"},"member_scope":"unknown"}],"error":""}`, false},
+		{"legacy draft questions", `{"drafts":[{"item":{"title":"开会"},"member_scope":"unknown","questions":[]}],"error":""}`, true},
+		{"legacy top level", `{"drafts":[],"questions":["请补充日期"]}`, true},
+		{"object error", `{"drafts":[],"error":{"message":"请补充日期"}}`, true},
+		{"empty error", `{"drafts":[],"error":" "}`, true},
+		{"error with draft", `{"drafts":[{"item":{},"member_scope":"unknown"}],"error":"请补充日期"}`, true},
+		{"string in draft", `{"drafts":[{"item":{},"member_scope":"unknown","questions":["请补充日期"]}],"error":""}`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				aiCompletion(w, tt.content)
+			}))
+			defer upstream.Close()
+			ai, err := newAIClient(upstream.URL, "fake-key", "test-model")
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := ai.extract(context.Background(), map[string]string{"text": "开会"})
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("extract error = %v, want error %v", err, tt.wantErr)
+			}
+			if tt.name == "drafts with missing values" && err == nil {
+				if len(result.Drafts) != 2 || result.Drafts[1].Item.OccurAt != nil || result.Drafts[1].Item.MemberID != nil || result.Error != "" {
+					t.Fatalf("unexpected drafts: %#v", result)
+				}
+			}
+		})
+	}
+}
+
 func TestAIParsePreviewAndCreate(t *testing.T) {
 	var called atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,9 +120,9 @@ func TestAIParsePreviewAndCreate(t *testing.T) {
 		}
 		anchor, _ := time.Parse(dateLayout, input.ReferenceDate)
 		aiCompletion(w, fmt.Sprintf(`{"drafts":[
-			{"item":{"module_key":"calendar","title":"体检","occur_at":%q,"member_id":1,"payload":{}},"member_scope":"matched","questions":[]},
-			{"item":{"module_key":"calendar","title":"交电费","occur_at":%q,"member_id":2,"payload":{}},"member_scope":"matched","questions":[]}
-		],"questions":[]}`, input.ReferenceDate, anchor.AddDate(0, 0, 1).Format(dateLayout)))
+			{"item":{"module_key":"calendar","title":"体检","occur_at":%q,"member_id":1,"payload":{}},"member_scope":"matched"},
+			{"item":{"module_key":"calendar","title":"交电费","occur_at":%q,"member_id":2,"payload":{}},"member_scope":"matched"}
+		],"error":""}`, input.ReferenceDate, anchor.AddDate(0, 0, 1).Format(dateLayout)))
 	}))
 	t.Cleanup(upstream.Close)
 	ai, err := newAIClient(upstream.URL+"/v1/", "fake-key", "test-model")
@@ -107,6 +149,11 @@ func TestAIParsePreviewAndCreate(t *testing.T) {
 	if after != before {
 		t.Fatal("parsing must not write items")
 	}
+	for _, draft := range drafts {
+		if _, ok := draft.(map[string]any)["questions"]; ok {
+			t.Fatalf("legacy questions field in draft: %#v", draft)
+		}
+	}
 	item := drafts[0].(map[string]any)["item"]
 	code, env = call(t, srv, "POST", "/api/v1/items", item, headers)
 	if code != 201 || dataMap(t, env)["title"] != "体检" {
@@ -127,7 +174,7 @@ func TestAIParsePermissions(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		aiCompletion(w, `{"drafts":[],"questions":["请补充事项"]}`)
+		aiCompletion(w, `{"drafts":[],"error":"请补充事项"}`)
 	}))
 	defer upstream.Close()
 	ai, _ := newAIClient(upstream.URL, "fake", "test")
@@ -159,9 +206,18 @@ func TestAIParsePermissions(t *testing.T) {
 			if calls.Load() != 0 {
 				t.Fatal("unauthorized calls reached model")
 			}
-			code, _ = apiCall(t, browser, srv, "POST", "/api/v1/items/parse", body, csrf)
+			var result map[string]any
+			code, result = apiCall(t, browser, srv, "POST", "/api/v1/items/parse", body, csrf)
 			if code != 200 {
 				t.Errorf("member with CSRF: %d", code)
+			} else {
+				data := dataMap(t, result)
+				if data["error"] != "请补充事项" {
+					t.Errorf("unexpected parse error: %#v", data)
+				}
+				if _, ok := data["questions"]; ok {
+					t.Errorf("legacy questions field in response: %#v", data)
+				}
 			}
 		}
 	}
@@ -227,7 +283,7 @@ func TestAIErrorDiagnostics(t *testing.T) {
 // 线上真实故障：模型把日期写成 JSON 数字，解码报 type mismatch。
 // 这个用例同时锁住三件事：诊断能指出字段、日志会打印模型原始输出、密钥不外泄。
 func TestAIRawResponseLogging(t *testing.T) {
-	const content = `{"drafts":[{"item":{"module_key":"calendar","title":"体检","occur_at":20261108},"member_scope":"unknown","questions":[]}],"questions":[]}`
+	const content = `{"drafts":[{"item":{"module_key":"calendar","title":"体检","occur_at":20261108},"member_scope":"unknown"}],"error":""}`
 
 	newClient := func(t *testing.T) *AIClient {
 		t.Helper()
@@ -396,19 +452,14 @@ func TestValidateAIDraft(t *testing.T) {
 			if (err != nil) != tc.bad {
 				t.Fatalf("unexpected validation: %v", err)
 			}
-			if !tc.bad && draft.Item.MemberID == nil && (draft.MemberScope != "unknown" || len(draft.Questions) == 0) {
-				t.Fatal("unknown member must require confirmation")
+			if !tc.bad && draft.Item.MemberID == nil && draft.MemberScope != "unknown" {
+				t.Fatal("missing member must remain unknown")
 			}
 		})
 	}
 	draft := itemDraft{Item: createItemReq{ModuleKey: "calendar", Title: "聚餐"}, MemberScope: "family"}
 	if err := validateDraft(&draft, modules, members); err != nil || draft.MemberScope != "family" {
 		t.Fatal("explicit family should remain family")
-	}
-	for _, q := range draft.Questions {
-		if q.Field == "member_id" {
-			t.Fatal("explicit family must not be treated as unknown")
-		}
 	}
 	id := int64(1)
 	for _, scope := range []string{"unknown", "family", "invalid"} {
@@ -421,7 +472,7 @@ func TestValidateAIDraft(t *testing.T) {
 
 func TestAIOutputCannotEscapeModule(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		aiCompletion(w, `{"drafts":[{"item":{"module_key":"todo","title":"越界草稿"},"member_scope":"family","questions":[]}],"questions":[]}`)
+		aiCompletion(w, `{"drafts":[{"item":{"module_key":"todo","title":"越界草稿"},"member_scope":"family"}],"error":""}`)
 	}))
 	defer upstream.Close()
 	ai, _ := newAIClient(upstream.URL, "fake", "test")
@@ -482,7 +533,7 @@ func TestAIConfigAndLimits(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		aiCompletion(w, `{"drafts":[],"questions":["请补充事项"]}`)
+		aiCompletion(w, `{"drafts":[],"error":"请补充事项"}`)
 	}))
 	defer upstream.Close()
 	ai, _ := newAIClient(upstream.URL, "fake", "test")
