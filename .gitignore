@@ -22,6 +22,7 @@
 .env
 .env.*
 !.env.example
+deploy/github-webhook.env
 
 # ---- 编辑器 / 系统 ----
 .DS_Store

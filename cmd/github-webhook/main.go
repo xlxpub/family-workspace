@@ -32,6 +32,16 @@ type hook struct {
 }
 
 func (h *hook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/healthz" {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = io.WriteString(w, "ok\n")
+		return
+	}
 	if r.URL.Path != "/webhooks/github" {
 		http.NotFound(w, r)
 		return

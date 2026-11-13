@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.21-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" -o /out/github-webhook ./cmd/github-webhook
+
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates git make bash openssh-client wget \
+        docker-cli docker-cli-compose \
+ && git config --system --add safe.directory '*'
+COPY --from=builder /out/github-webhook /usr/local/bin/github-webhook
+COPY scripts/webhook-entrypoint.sh /usr/local/bin/webhook-entrypoint
+RUN chmod 755 /usr/local/bin/webhook-entrypoint
+EXPOSE 8091
+ENTRYPOINT ["/usr/local/bin/webhook-entrypoint"]

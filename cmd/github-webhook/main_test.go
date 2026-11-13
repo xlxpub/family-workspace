@@ -11,6 +11,15 @@ import (
 	"testing"
 )
 
+func TestHealth(t *testing.T) {
+	h := &hook{}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if w.Code != http.StatusOK || w.Body.String() != "ok\n" {
+		t.Fatalf("health response %d %q", w.Code, w.Body.String())
+	}
+}
+
 func TestWebhook(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
 	h := &hook{secret: secret, repository: "owner/repo", branch: "main", queue: make(chan struct{}, 1)}

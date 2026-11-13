@@ -9,7 +9,7 @@ export COMPOSE
 # 锁定工具链，避免 go 命令自动升级到高于 go.mod 的版本
 export GOTOOLCHAIN := local
 
-.PHONY: help vet test build build-arm64 webhook-build run local image up down logs ps backup clean
+.PHONY: help vet test build build-arm64 webhook-build webhook-up webhook-down webhook-logs run local image up down logs ps backup clean
 
 help: ## 显示可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -25,6 +25,17 @@ build: ## 编译当前平台到 bin/family-server
 
 webhook-build: ## 编译宿主机 GitHub webhook 服务
 	CGO_ENABLED=0 $(GO) build -trimpath -o bin/github-webhook ./cmd/github-webhook
+
+webhook-up: ## 启动独立的 8091 webhook 服务（不会被 make up 重启）
+	@test -f deploy/github-webhook.env || { echo "请先复制 deploy/github-webhook.env.example 为 deploy/github-webhook.env"; exit 1; }
+	@test -d "$${FW_WEBHOOK_SSH_DIR:-$$HOME/.ssh}" || { echo "找不到 SSH 目录，无法让服务拉取 GitHub"; exit 1; }
+	FW_WEBHOOK_DIR="$(CURDIR)" $(COMPOSE) -f docker-compose.webhook.yml up -d --build
+
+webhook-down: ## 停止 8091 webhook 服务
+	FW_WEBHOOK_DIR="$(CURDIR)" $(COMPOSE) -f docker-compose.webhook.yml down
+
+webhook-logs: ## 查看 8091 webhook 服务日志
+	FW_WEBHOOK_DIR="$(CURDIR)" $(COMPOSE) -f docker-compose.webhook.yml logs -f --tail=100
 
 build-arm64: ## 交叉编译 ARM64（NAS / 树莓派）
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath -ldflags="-s -w" -o bin/family-server-linux-arm64 .
