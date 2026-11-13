@@ -11,6 +11,15 @@ import (
 	"testing"
 )
 
+func TestDeployCommandUsesHostNamespaces(t *testing.T) {
+	cmd := deployCommand(context.Background(), true, "/root/family-workspace", "make", "up")
+	got := strings.Join(cmd.Args, " ")
+	want := "nsenter -t 1 -m -u -i -n -- make -C /root/family-workspace up"
+	if got != want {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestHealth(t *testing.T) {
 	h := &hook{}
 	w := httptest.NewRecorder()

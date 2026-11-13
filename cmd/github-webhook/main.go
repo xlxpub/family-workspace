@@ -122,6 +122,16 @@ func (h *hook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type commandRunner func(context.Context, string, ...string) (string, error)
 
+func deployCommand(ctx context.Context, nsenter bool, dir, name string, args ...string) *exec.Cmd {
+	if nsenter {
+		argv := append([]string{"-t", "1", "-m", "-u", "-i", "-n", "--", name, "-C", dir}, args...)
+		return exec.CommandContext(ctx, "nsenter", argv...)
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	return cmd
+}
+
 func deploy(ctx context.Context, run commandRunner, branch string) error {
 	if _, err := run(ctx, "git", "check-ref-format", "--branch", branch); err != nil {
 		return fmt.Errorf("invalid branch: %w", err)
@@ -173,10 +183,10 @@ func main() {
 		addr = "127.0.0.1:8091"
 	}
 	h := &hook{secret: []byte(secret), repository: repo, branch: branch, queue: make(chan struct{}, 1)}
+	nsenter := os.Getenv("FW_WEBHOOK_NSENTER") == "1"
 	run := func(ctx context.Context, name string, args ...string) (string, error) {
-		cmd := exec.CommandContext(ctx, name, args...)
-		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+		cmd := deployCommand(ctx, nsenter, dir, name, args...)
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "HOME=/root")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return "", fmt.Errorf("%s failed: %w: %s", name, err, strings.TrimSpace(string(out)))

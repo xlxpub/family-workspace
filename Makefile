@@ -26,16 +26,26 @@ build: ## 编译当前平台到 bin/family-server
 webhook-build: ## 编译宿主机 GitHub webhook 服务
 	CGO_ENABLED=0 $(GO) build -trimpath -o bin/github-webhook ./cmd/github-webhook
 
+# podman-compose 1.0.6 不能解析嵌套变量，因此不用 compose 文件启动。
+# docker 在 OpenCloudOS 上是 Podman 包装，这些命令同样适用。
 webhook-up: ## 启动独立的 8091 webhook 服务（不会被 make up 重启）
 	@test -f deploy/github-webhook.env || { echo "请先复制 deploy/github-webhook.env.example 为 deploy/github-webhook.env"; exit 1; }
-	@test -d "$${FW_WEBHOOK_SSH_DIR:-$$HOME/.ssh}" || { echo "找不到 SSH 目录，无法让服务拉取 GitHub"; exit 1; }
-	FW_WEBHOOK_DIR="$(CURDIR)" $(COMPOSE) -f docker-compose.webhook.yml up -d --build
+	docker build -f Dockerfile.webhook -t family-webhook:latest .
+	-docker rm -f family-webhook
+	docker run -d --name family-webhook --restart unless-stopped \
+		--network host --pid host --privileged \
+		--env-file deploy/github-webhook.env \
+		-e FW_WEBHOOK_DIR="$(CURDIR)" \
+		-e FW_WEBHOOK_ADDR=127.0.0.1:8091 \
+		-e FW_WEBHOOK_NSENTER=1 \
+		-e GIT_TERMINAL_PROMPT=0 \
+		family-webhook:latest
 
 webhook-down: ## 停止 8091 webhook 服务
-	FW_WEBHOOK_DIR="$(CURDIR)" $(COMPOSE) -f docker-compose.webhook.yml down
+	docker rm -f family-webhook
 
 webhook-logs: ## 查看 8091 webhook 服务日志
-	FW_WEBHOOK_DIR="$(CURDIR)" $(COMPOSE) -f docker-compose.webhook.yml logs -f --tail=100
+	docker logs -f --tail=100 family-webhook
 
 build-arm64: ## 交叉编译 ARM64（NAS / 树莓派）
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath -ldflags="-s -w" -o bin/family-server-linux-arm64 .

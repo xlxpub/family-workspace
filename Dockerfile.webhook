@@ -10,11 +10,9 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /out/github-webhook ./cmd/github-webhook
 
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates git make bash openssh-client wget \
-        docker-cli docker-cli-compose \
- && git config --system --add safe.directory '*'
+RUN apk add --no-cache ca-certificates wget util-linux-misc
 COPY --from=builder /out/github-webhook /usr/local/bin/github-webhook
-COPY scripts/webhook-entrypoint.sh /usr/local/bin/webhook-entrypoint
-RUN chmod 755 /usr/local/bin/webhook-entrypoint
 EXPOSE 8091
-ENTRYPOINT ["/usr/local/bin/webhook-entrypoint"]
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8091/healthz >/dev/null || exit 1
+ENTRYPOINT ["/usr/local/bin/github-webhook"]
