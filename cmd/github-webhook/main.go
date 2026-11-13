@@ -122,13 +122,40 @@ func (h *hook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type commandRunner func(context.Context, string, ...string) (string, error)
 
+// 先加载宿主机登录配置，让 DOCKER_HOST 与手动执行 make up 一致。
+const hostCommandScript = `source /etc/profile >/dev/null || true
+if [ -z "${DOCKER_HOST-}" ] && [ -S /run/podman/podman.sock ] && [ ! -S /var/run/docker.sock ]; then
+  export DOCKER_HOST=unix:///run/podman/podman.sock
+fi
+exec "$@"`
+
+func commandEnv(nsenter bool) []string {
+	if !nsenter {
+		return append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	}
+	// 不继承容器环境。Podman 注入的 container=podman 会让 compose 去连
+	// 宿主机上不存在的 /var/run/docker.sock。DOCKER_HOST 交给登录配置设置。
+	return []string{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"HOME=/root",
+		"USER=root",
+		"LOGNAME=root",
+		"SHELL=/bin/bash",
+		"GIT_TERMINAL_PROMPT=0",
+	}
+}
+
 func deployCommand(ctx context.Context, nsenter bool, dir, name string, args ...string) *exec.Cmd {
 	if nsenter {
-		argv := append([]string{"-t", "1", "-m", "-u", "-i", "-n", "--", name, "-C", dir}, args...)
-		return exec.CommandContext(ctx, "nsenter", argv...)
+		argv := []string{"-t", "1", "-m", "-u", "-i", "-n", "--", "bash", "-c", hostCommandScript, "bash", name, "-C", dir}
+		argv = append(argv, args...)
+		cmd := exec.CommandContext(ctx, "nsenter", argv...)
+		cmd.Env = commandEnv(true)
+		return cmd
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	cmd.Env = commandEnv(false)
 	return cmd
 }
 
@@ -186,7 +213,6 @@ func main() {
 	nsenter := os.Getenv("FW_WEBHOOK_NSENTER") == "1"
 	run := func(ctx context.Context, name string, args ...string) (string, error) {
 		cmd := deployCommand(ctx, nsenter, dir, name, args...)
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "HOME=/root")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return "", fmt.Errorf("%s failed: %w: %s", name, err, strings.TrimSpace(string(out)))

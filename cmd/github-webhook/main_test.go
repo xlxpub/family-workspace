@@ -11,12 +11,26 @@ import (
 	"testing"
 )
 
+func TestHostCommandEnvAvoidsDockerSocket(t *testing.T) {
+	got := strings.Join(commandEnv(true), "\n")
+	if strings.Contains(got, "container=") || strings.Contains(got, "DOCKER_HOST=") || strings.Contains(got, "COMPOSE=") {
+		t.Fatalf("host env still overrides the login shell: %s", got)
+	}
+	if !strings.Contains(got, "HOME=/root") || !strings.Contains(got, "GIT_TERMINAL_PROMPT=0") {
+		t.Fatalf("env = %s", got)
+	}
+}
+
 func TestDeployCommandUsesHostNamespaces(t *testing.T) {
 	cmd := deployCommand(context.Background(), true, "/root/family-workspace", "make", "up")
-	got := strings.Join(cmd.Args, " ")
-	want := "nsenter -t 1 -m -u -i -n -- make -C /root/family-workspace up"
+	got := strings.Join(cmd.Args, "\x00")
+	want := strings.Join([]string{
+		"nsenter", "-t", "1", "-m", "-u", "-i", "-n", "--",
+		"bash", "-c", hostCommandScript, "bash",
+		"make", "-C", "/root/family-workspace", "up",
+	}, "\x00")
 	if got != want {
-		t.Fatalf("got %q", got)
+		t.Fatalf("got %q", strings.Join(cmd.Args, " "))
 	}
 }
 
