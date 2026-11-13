@@ -36,7 +36,7 @@ func main() {
 	addr := env("FW_ADDR", ":8080")
 	password := os.Getenv("FW_AUTH_PASSWORD")
 	cookieSecure := os.Getenv("FW_COOKIE_SECURE") == "1"
-	log.Printf("测试自动发布4 1")
+	log.Printf("测试自动发布4 2")
 
 	st, err := OpenStore(dbPath)
 	if err != nil {
