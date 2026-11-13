@@ -9,7 +9,7 @@ export COMPOSE
 # 锁定工具链，避免 go 命令自动升级到高于 go.mod 的版本
 export GOTOOLCHAIN := local
 
-.PHONY: help vet test build build-arm64 run local image up down logs ps backup clean
+.PHONY: help vet test build build-arm64 webhook-build run local image up down logs ps backup clean
 
 help: ## 显示可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -22,6 +22,9 @@ test: vet ## 运行全部集成测试
 
 build: ## 编译当前平台到 bin/family-server
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w" -o bin/family-server .
+
+webhook-build: ## 编译宿主机 GitHub webhook 服务
+	CGO_ENABLED=0 $(GO) build -trimpath -o bin/github-webhook ./cmd/github-webhook
 
 build-arm64: ## 交叉编译 ARM64（NAS / 树莓派）
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath -ldflags="-s -w" -o bin/family-server-linux-arm64 .

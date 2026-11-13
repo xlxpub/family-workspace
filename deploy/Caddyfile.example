@@ -29,7 +29,14 @@ family.example.com {
 
 	# 登录接口不做额外缓冲，保证 401 与锁定响应及时返回并被记录；
 	# 真正的限速/封禁交给 fail2ban，避免在 Caddy 里引入第三方限速插件。
-	reverse_proxy 127.0.0.1:8080
+	# 同一域名分流：GitHub Webhook 走独立宿主机进程，其余请求仍进入应用。
+	# 两个 handle 互斥，必须把应用反代放进第二个 handle，不能再留顶层 reverse_proxy。
+	handle /webhooks/github {
+		reverse_proxy 127.0.0.1:8091
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
 }
 
 # ---------------------------------------------------------------
@@ -48,6 +55,9 @@ family.example.com {
 # 	}
 #
 # 	redir /myfamily /myfamily/ 308
+# 	handle /webhooks/github {
+# 		reverse_proxy 127.0.0.1:8091
+# 	}
 # 	handle_path /myfamily/* {
 # 		reverse_proxy 127.0.0.1:8080
 # 	}

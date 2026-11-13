@@ -1,0 +1,20 @@
+[Unit]
+Description=Family Workspace GitHub deployment webhook
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 该进程会执行 make up，因此需要访问 Docker。Docker 权限接近宿主机 root，
+# 请改成实际的部署账号，并确保该账号可读仓库、可非交互访问 origin。
+User=root
+Group=root
+WorkingDirectory=/opt/family-workspace
+EnvironmentFile=/etc/family-webhook.env
+ExecStart=/opt/family-webhook/github-webhook
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
