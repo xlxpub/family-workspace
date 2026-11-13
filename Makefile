@@ -60,7 +60,7 @@ image: ## 构建 Docker 镜像
 	$(COMPOSE) build
 
 up: ## 构建并后台启动（需先准备 .env；Podman 用 COMPOSE="podman compose"）
-	$(COMPOSE) up -d --build
+	$(COMPOSE) up -d --build --force-recreate
 
 down: ## 停止并移除容器（数据卷保留）
 	$(COMPOSE) down
