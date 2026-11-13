@@ -123,6 +123,14 @@ nav{display:flex;flex-direction:column;gap:3px;margin-top:6px}
 .ev .iconbtn svg{width:11px;height:11px}
 button.more{border:0;background:transparent;color:var(--sub);padding:1px 2px;font-size:10px;text-align:left;border-radius:4px}
 button.more:hover{color:var(--brand);background:var(--brand-soft)}
+.cal .cell.selected{box-shadow:inset 0 0 0 2px var(--brand);background:#f5f7ff}
+.cal-views{display:flex;gap:4px;padding:3px;background:#f2f4f9;border-radius:9px}
+.cal-views button{border:0;border-radius:7px;padding:5px 12px;background:transparent;color:var(--sub)}
+.cal-views button.on{background:#fff;color:var(--brand);font-weight:600;box-shadow:0 1px 4px #0001}
+.cal-detail{margin-top:16px}.cal-detail-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}.cal-detail-head strong{flex:1;font-size:15px}
+.agenda-day{margin-top:18px}.agenda-date{font-weight:700;font-size:15px;margin-bottom:8px}.agenda-date.today{color:var(--brand)}
+.agenda-item{display:flex;align-items:flex-start;gap:10px;background:#fafbfe;border:1px solid var(--line);border-radius:10px;padding:12px;margin:6px 0}
+.agenda-item .dot{margin-top:7px;flex:0 0 8px}.agenda-content{flex:1;min-width:0}.agenda-title{font-weight:600;overflow-wrap:anywhere}.agenda-meta{color:var(--sub);font-size:12px;margin-top:3px;overflow-wrap:anywhere}.agenda-item .iconbtn{opacity:1}
 
 /* ---------- 模块管理 ---------- */
 table{width:100%;border-collapse:collapse;font-size:13px}
@@ -422,7 +430,7 @@ async function loadAll(){
 function save(){ /* 内存即视图真相；写操作各自 push 到后端持久化 */ }
 
 /* ============ 视图状态 ============ */
-const state = {view:'home', member:'all', calY:new Date().getFullYear(), calM:new Date().getMonth(), kind:'全部', filter:'open', calOpen:''};
+const state = {view:'home', member:'all', calY:new Date().getFullYear(), calM:new Date().getMonth(), kind:'全部', filter:'open', calOpen:'', calMode:'month'};
 function me(){return DB.me||{role:'viewer',username:'',display_name:'未登录'};}
 const RANK={viewer:1,member:2,admin:3};
 function canSee(role){return RANK[me().role]>=RANK[role||'viewer'];}
@@ -532,21 +540,42 @@ function renderTimeline(mod){
 }
 
 /* ============ 日历视图 ============ */
+function calendarItems(evs){
+  return evs.map(i=>{const mm=memberById(i.member_id), p=i.payload||{};
+    const details=[mm?mm.name:'全家',p.location,p.note].filter(Boolean).map(esc).join(' · ');
+    return '<div class="agenda-item"><i class="dot" style="background:'+(mm?mm.color:'#5b7cfa')+'"></i><div class="agenda-content"><div class="agenda-title">'+esc(i.title)+'</div><div class="agenda-meta">'+details+'</div></div>'+rowActs(i)+'</div>';
+  }).join('');
+}
+function calendarDateLabel(ds){
+  const parts=ds.split('-').map(Number), d=new Date(parts[0],parts[1]-1,parts[2]);
+  return parts[0]+'年'+parts[1]+'月'+parts[2]+'日 周'+'日一二三四五六'[d.getDay()];
+}
 function renderCalendar(mod){
   const y=state.calY,m=state.calM;
   const first=new Date(y,m,1), lead=(first.getDay()+6)%7, start=new Date(y,m,1-lead);
   const byDate={}; itemsOf(mod.key).forEach(i=>{ if(i.occur_at){ (byDate[i.occur_at]=byDate[i.occur_at]||[]).push(i); } });
-  let h='<div class="card"><div class="cal-head"><div class="cal-nav"><button class="btn sm" data-act="prevMonth">← 上月</button><strong>'+y+' 年 '+(m+1)+' 月</strong><button class="btn sm" data-act="nextMonth">下月 →</button><button class="btn sm" data-act="today">回到本月</button></div><div class="cal-spacer"></div>'+addBtn(mod.key,'＋ 新建事件')+'</div><div class="cal">';
+  let h='<div class="card"><div class="cal-head"><div class="cal-nav"><button class="btn sm" data-act="prevMonth">← 上月</button><strong>'+y+' 年 '+(m+1)+' 月</strong><button class="btn sm" data-act="nextMonth">下月 →</button><button class="btn sm" data-act="today">回到本月</button></div><div class="cal-views" aria-label="日历视图"><button type="button" class="'+(state.calMode==='month'?'on':'')+'" data-act="calMode" data-mode="month" aria-pressed="'+(state.calMode==='month')+'">月</button><button type="button" class="'+(state.calMode==='agenda'?'on':'')+'" data-act="calMode" data-mode="agenda" aria-pressed="'+(state.calMode==='agenda')+'">日程</button></div><div class="cal-spacer"></div>'+addBtn(mod.key,'＋ 新建事件')+'</div>';
+  if(state.calMode==='agenda'){
+    const prefix=fmt(first).slice(0,7)+'-';
+    const dates=Object.keys(byDate).filter(ds=>ds.startsWith(prefix)).sort();
+    h+=dates.length?dates.map(ds=>'<section class="agenda-day"><div class="agenda-date '+(ds===TODAY?'today':'')+'">'+calendarDateLabel(ds)+(ds===TODAY?' · 今天':'')+'</div>'+calendarItems(byDate[ds])+'</section>').join(''):'<div class="empty">本月暂无日程</div>';
+    return h+'</div>';
+  }
+  h+='<div class="cal">';
   ['一','二','三','四','五','六','日'].forEach(w=>h+='<div class="wd">周'+w+'</div>');
   for(let n=0;n<42;n++){
     const d=new Date(start); d.setDate(start.getDate()+n);
-    const ds=fmt(d), dim=d.getMonth()!==m, evs=byDate[ds]||[], open=state.calOpen===ds;
-    h+='<div class="cell '+(dim?'dim ':'')+(ds===TODAY?'today':'')+'" data-act="addOn" data-date="'+ds+'" data-key="'+esc(mod.key)+'"><div class="dnum"><span>'+d.getDate()+'</span></div>';
-    (open?evs:evs.slice(0,3)).forEach(i=>{const mm=memberById(i.member_id);h+='<div class="ev" data-act="calEvent" data-date="'+ds+'" style="background:'+(mm?mm.color+'18':'#eef2ff')+'"><i class="dot" style="background:'+(mm?mm.color:'#5b7cfa')+'"></i><span class="ev-t">'+esc(i.title)+'</span>'+rowActs(i)+'</div>';});
-    if(evs.length>3) h+='<button type="button" class="more" data-act="calExpand" data-date="'+ds+'">'+(open?'收起':'+'+(evs.length-3)+' 条')+'</button>';
+    const ds=fmt(d), dim=d.getMonth()!==m, evs=byDate[ds]||[];
+    h+='<div class="cell '+(dim?'dim ':'')+(ds===TODAY?'today ':'')+(state.calOpen===ds?'selected':'')+'" role="button" tabindex="0" aria-label="'+calendarDateLabel(ds)+'，'+evs.length+'条日程" data-act="calSelect" data-date="'+ds+'"><div class="dnum"><span>'+d.getDate()+'</span></div>';
+    evs.slice(0,3).forEach(i=>{const mm=memberById(i.member_id);h+='<div class="ev" style="background:'+(mm?mm.color+'18':'#eef2ff')+'"><i class="dot" style="background:'+(mm?mm.color:'#5b7cfa')+'"></i><span class="ev-t">'+esc(i.title)+'</span></div>';});
+    if(evs.length>3) h+='<span class="more">+'+(evs.length-3)+' 条</span>';
     h+='</div>';
   }
-  return h+'</div><p class="desc" style="margin:12px 0 0">点任意空白日期格可直接新增；悬停事件可删除，点「+N 条」或事件本身展开当天全部安排。成员按颜色区分。真实实现中，待办截止日与「就医日」会作为同源条目叠加显示在此。</p></div>';
+  h+='</div>';
+  if(state.calOpen){const evs=byDate[state.calOpen]||[];
+    h+='<section class="cal-detail"><div class="cal-detail-head"><strong>'+calendarDateLabel(state.calOpen)+' · '+evs.length+' 条日程</strong>'+(canWrite()?'<button class="btn sm" data-act="addOn" data-key="'+esc(mod.key)+'" data-date="'+state.calOpen+'">＋ 新建</button>':'')+'</div>'+(evs.length?calendarItems(evs):'<div class="empty">当天暂无日程</div>')+'</section>';
+  }else h+='<p class="desc" style="margin:12px 0 0">选择日期查看当天完整日程，也可切换到日程列表。</p>';
+  return h+'</div>';
 }
 
 /* ============ 模块管理（扩展能力演示） ============ */
@@ -811,6 +840,11 @@ function showLogin(){
 }
 
 /* ============ 事件 ============ */
+document.addEventListener('keydown',e=>{
+  if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-act="calSelect"]')){
+    e.preventDefault(); e.target.click();
+  }
+});
 document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-act]'); if(!t)return;
   const a=t.dataset.act;
@@ -821,7 +855,8 @@ document.addEventListener('click',async e=>{
   else if(a==='prevMonth'){ state.calM--; if(state.calM<0){state.calM=11;state.calY--;} state.calOpen=''; render(); }
   else if(a==='nextMonth'){ state.calM++; if(state.calM>11){state.calM=0;state.calY++;} state.calOpen=''; render(); }
   else if(a==='today'){ state.calY=new Date().getFullYear(); state.calM=new Date().getMonth(); state.calOpen=''; render(); }
-  else if(a==='calExpand'||a==='calEvent'){ const ds=t.dataset.date; state.calOpen=state.calOpen===ds?'':ds; render(); }
+  else if(a==='calSelect'){ state.calOpen=t.dataset.date; render(); }
+  else if(a==='calMode'){ state.calMode=t.dataset.mode; render(); }
   else if(a==='add') openModal(t.dataset.key||(state.view!=='home'&&state.view!=='__modules__'?state.view:null),null);
   else if(a==='addOn') openModal(t.dataset.key,t.dataset.date);
   else if(a==='edit') openEditModal(t.dataset.id);
