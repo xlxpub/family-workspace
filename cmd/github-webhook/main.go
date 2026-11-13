@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -159,6 +160,37 @@ func deployCommand(ctx context.Context, nsenter bool, dir, name string, args ...
 	return cmd
 }
 
+// lineLog 把命令输出按行写入进程日志。stdout、stderr 各用一个实例，避免并发写同一缓冲。
+type lineLog struct {
+	prefix string
+	rest   []byte
+}
+
+func (w *lineLog) Write(p []byte) (int, error) {
+	w.rest = append(w.rest, p...)
+	w.drain(false)
+	return len(p), nil
+}
+
+func (w *lineLog) Flush() { w.drain(true) }
+
+func (w *lineLog) drain(all bool) {
+	for {
+		i := bytes.IndexAny(w.rest, "\r\n")
+		if i < 0 {
+			break
+		}
+		if i > 0 {
+			log.Printf("%s%s", w.prefix, w.rest[:i])
+		}
+		w.rest = w.rest[i+1:]
+	}
+	if all && len(w.rest) > 0 {
+		log.Printf("%s%s", w.prefix, w.rest)
+		w.rest = nil
+	}
+}
+
 func deploy(ctx context.Context, run commandRunner, branch string) error {
 	if _, err := run(ctx, "git", "check-ref-format", "--branch", branch); err != nil {
 		return fmt.Errorf("invalid branch: %w", err)
@@ -213,6 +245,19 @@ func main() {
 	nsenter := os.Getenv("FW_WEBHOOK_NSENTER") == "1"
 	run := func(ctx context.Context, name string, args ...string) (string, error) {
 		cmd := deployCommand(ctx, nsenter, dir, name, args...)
+		if name == "make" {
+			stdout := &lineLog{prefix: "make up stdout: "}
+			stderr := &lineLog{prefix: "make up stderr: "}
+			cmd.Stdout = stdout
+			cmd.Stderr = stderr
+			err := cmd.Run()
+			stdout.Flush()
+			stderr.Flush()
+			if err != nil {
+				return "", fmt.Errorf("%s failed: %w", name, err)
+			}
+			return "", nil
+		}
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return "", fmt.Errorf("%s failed: %w: %s", name, err, strings.TrimSpace(string(out)))

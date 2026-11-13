@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -31,6 +34,26 @@ func TestDeployCommandUsesHostNamespaces(t *testing.T) {
 	}, "\x00")
 	if got != want {
 		t.Fatalf("got %q", strings.Join(cmd.Args, " "))
+	}
+}
+
+func TestLineLogWritesBothStreams(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	stdout := &lineLog{prefix: "make up stdout: "}
+	stderr := &lineLog{prefix: "make up stderr: "}
+	_, _ = stdout.Write([]byte("build ok\r\n"))
+	_, _ = stderr.Write([]byte("warning"))
+	stdout.Flush()
+	stderr.Flush()
+
+	got := buf.String()
+	for _, want := range []string{"make up stdout: build ok", "make up stderr: warning"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log %q missing %q", got, want)
+		}
 	}
 }
 
